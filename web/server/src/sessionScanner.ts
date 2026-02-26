@@ -2,10 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import type { AgentState } from './types.js';
-
-const SESSION_TITLE_MAX_LENGTH = 80;
-const SESSION_SCAN_READ_BYTES = 16384;
-const MAX_SESSIONS = 50;
+import {
+	SESSION_TITLE_MAX_LENGTH,
+	SESSION_SCAN_READ_BYTES,
+	MAX_SESSIONS_DISPLAY,
+} from './constants.js';
 
 export interface SessionInfo {
 	sessionId: string;
@@ -64,7 +65,7 @@ export function scanAllSessions(
 	// 按修改時間降序排列
 	sessions.sort((a, b) => b.modifiedAt - a.modifiedAt);
 
-	return sessions.slice(0, MAX_SESSIONS);
+	return sessions.slice(0, MAX_SESSIONS_DISPLAY);
 }
 
 function extractSessionInfo(

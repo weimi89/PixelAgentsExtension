@@ -34,6 +34,11 @@ export const AGENT_SEATS_FILE_NAME = 'agent-seats.json';
 // ── 自動偵測 ──────────────────────────────────────────
 export const ACTIVE_JSONL_MAX_AGE_MS = 30_000; // 30 秒 — 在此時間窗口內被修改的檔案視為「活躍」
 
+// ── 工作階段掃描 ──────────────────────────────────────
+export const SESSION_TITLE_MAX_LENGTH = 80;
+export const SESSION_SCAN_READ_BYTES = 16384;
+export const MAX_SESSIONS_DISPLAY = 50;
+
 // ── tmux ─────────────────────────────────────────────────────
 export const TMUX_HEALTH_CHECK_INTERVAL_MS = 5000;
 

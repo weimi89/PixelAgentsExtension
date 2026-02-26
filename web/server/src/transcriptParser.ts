@@ -1,5 +1,5 @@
 import * as path from 'path';
-import type { AgentState, MessageSender } from './types.js';
+import type { AgentContext } from './types.js';
 import {
 	cancelWaitingTimer,
 	startWaitingTimer,
@@ -14,8 +14,10 @@ import {
 	TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
 } from './constants.js';
 
+/** 工具權限豁免清單 — 這些工具不會觸發權限等待偵測 */
 export const PERMISSION_EXEMPT_TOOLS = new Set(['Task', 'AskUserQuestion']);
 
+/** 依照工具名稱與輸入參數，格式化可讀的工具狀態文字 */
 export function formatToolStatus(toolName: string, input: Record<string, unknown>): string {
 	const base = (p: unknown) => typeof p === 'string' ? path.basename(p) : '';
 	switch (toolName) {
@@ -41,14 +43,13 @@ export function formatToolStatus(toolName: string, input: Record<string, unknown
 	}
 }
 
+/** 解析單行 JSONL 轉錄記錄，更新代理狀態並發送對應訊息 */
 export function processTranscriptLine(
 	agentId: number,
 	line: string,
-	agents: Map<number, AgentState>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	sender: MessageSender | undefined,
+	ctx: AgentContext,
 ): void {
+	const { agents, waitingTimers, permissionTimers, sender } = ctx;
 	const agent = agents.get(agentId);
 	if (!agent) return;
 	try {
@@ -99,7 +100,7 @@ export function processTranscriptLine(
 				startWaitingTimer(agentId, TEXT_IDLE_DELAY_MS, agents, waitingTimers, sender);
 			}
 		} else if (record.type === 'progress') {
-			processProgressRecord(agentId, record, agents, waitingTimers, permissionTimers, sender);
+			processProgressRecord(agentId, record, ctx);
 		} else if (record.type === 'user') {
 			const content = record.message?.content;
 			if (Array.isArray(content)) {
@@ -172,14 +173,13 @@ export function processTranscriptLine(
 	}
 }
 
+/** 處理 progress 類型記錄（子代理工具啟動/完成、bash/mcp 進度） */
 function processProgressRecord(
 	agentId: number,
 	record: Record<string, unknown>,
-	agents: Map<number, AgentState>,
-	_waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	sender: MessageSender | undefined,
+	ctx: AgentContext,
 ): void {
+	const { agents, permissionTimers, sender } = ctx;
 	const agent = agents.get(agentId);
 	if (!agent) return;
 

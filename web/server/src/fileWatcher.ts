@@ -1,25 +1,23 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { AgentState, MessageSender } from './types.js';
+import type { AgentContext, AgentState } from './types.js';
 import { cancelWaitingTimer, cancelPermissionTimer, clearAgentActivity } from './timerManager.js';
 import { processTranscriptLine } from './transcriptParser.js';
 import { removeAgent } from './agentManager.js';
 import { FILE_WATCHER_POLL_INTERVAL_MS, PROJECT_SCAN_INTERVAL_MS, ACTIVE_JSONL_MAX_AGE_MS } from './constants.js';
 
+/** 啟動檔案監視（fs.watch + 輪詢備援），偵測 JSONL 檔案變更 */
 export function startFileWatching(
 	agentId: number,
 	filePath: string,
-	agents: Map<number, AgentState>,
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	sender: MessageSender | undefined,
+	ctx: AgentContext,
 ): void {
+	const { agents, fileWatchers, pollingTimers } = ctx;
+
 	// 主要方式：fs.watch
 	try {
 		const watcher = fs.watch(filePath, () => {
-			readNewLines(agentId, agents, waitingTimers, permissionTimers, sender);
+			readNewLines(agentId, ctx);
 		});
 		fileWatchers.set(agentId, watcher);
 	} catch (e) {
@@ -29,18 +27,17 @@ export function startFileWatching(
 	// 備援：每 2 秒輪詢
 	const interval = setInterval(() => {
 		if (!agents.has(agentId)) { clearInterval(interval); return; }
-		readNewLines(agentId, agents, waitingTimers, permissionTimers, sender);
+		readNewLines(agentId, ctx);
 	}, FILE_WATCHER_POLL_INTERVAL_MS);
 	pollingTimers.set(agentId, interval);
 }
 
+/** 讀取 JSONL 檔案中的新增行，逐行交給轉錄解析器處理 */
 export function readNewLines(
 	agentId: number,
-	agents: Map<number, AgentState>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	sender: MessageSender | undefined,
+	ctx: AgentContext,
 ): void {
+	const { agents, waitingTimers, permissionTimers, sender } = ctx;
 	const agent = agents.get(agentId);
 	if (!agent) return;
 	try {
@@ -72,7 +69,7 @@ export function readNewLines(
 
 		for (const line of lines) {
 			if (!line.trim()) continue;
-			processTranscriptLine(agentId, line, agents, waitingTimers, permissionTimers, sender);
+			processTranscriptLine(agentId, line, ctx);
 		}
 	} catch (e) {
 		console.log(`[Pixel Agents] Read error for agent ${agentId}: ${e}`);
@@ -97,56 +94,34 @@ function isTrackedByAgent(filePath: string, agents: Map<number, AgentState>): bo
 	return false;
 }
 
+/** 啟動定期專案掃描，自動偵測並收養活躍的 Claude 會話 */
 export function ensureProjectScan(
 	projectDirs: string[],
-	knownJsonlFiles: Set<string>,
 	projectScanTimerRef: { current: ReturnType<typeof setInterval> | null },
-	nextAgentIdRef: { current: number },
-	agents: Map<number, AgentState>,
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
-	sender: MessageSender | undefined,
-	persistAgents: () => void,
+	ctx: AgentContext,
 ): void {
 	if (projectScanTimerRef.current) return;
 
 	// 初始掃描：收養所有專案目錄中的活躍 JSONL 檔案
 	for (const dir of projectDirs) {
-		scanAndAdopt(
-			dir, knownJsonlFiles, nextAgentIdRef, agents,
-			fileWatchers, pollingTimers, waitingTimers, permissionTimers,
-			jsonlPollTimers, sender, persistAgents,
-		);
+		scanAndAdopt(dir, ctx);
 	}
 
 	// 定期掃描新會話
 	projectScanTimerRef.current = setInterval(() => {
 		for (const dir of projectDirs) {
-			scanAndAdopt(
-				dir, knownJsonlFiles, nextAgentIdRef, agents,
-				fileWatchers, pollingTimers, waitingTimers, permissionTimers,
-				jsonlPollTimers, sender, persistAgents,
-			);
+			scanAndAdopt(dir, ctx);
 		}
 	}, PROJECT_SCAN_INTERVAL_MS);
 }
 
+/** 掃描單一專案目錄，收養活躍的外部 Claude 會話 */
 function scanAndAdopt(
 	projectDir: string,
-	knownJsonlFiles: Set<string>,
-	nextAgentIdRef: { current: number },
-	agents: Map<number, AgentState>,
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
-	sender: MessageSender | undefined,
-	persistAgents: () => void,
+	ctx: AgentContext,
 ): void {
+	const { knownJsonlFiles, nextAgentIdRef, agents, sender, persistAgents } = ctx;
+
 	let files: string[];
 	try {
 		files = fs.readdirSync(projectDir)
@@ -190,26 +165,18 @@ function scanAndAdopt(
 		sender?.postMessage({ type: 'agentCreated', id });
 
 		// 立即開始監視檔案
-		startFileWatching(id, file, agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers, sender);
-		readNewLines(id, agents, waitingTimers, permissionTimers, sender);
+		startFileWatching(id, file, ctx);
+		readNewLines(id, ctx);
 	}
 
 	// 檢查過期代理（JSONL 檔案不再被寫入）
-	checkStaleAgents(agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers, jsonlPollTimers, knownJsonlFiles, sender, persistAgents);
+	checkStaleAgents(ctx);
 }
 
 /** 移除 JSONL 檔案最近未更新且沒有受管理進程的代理 */
-function checkStaleAgents(
-	agents: Map<number, AgentState>,
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
-	knownJsonlFiles: Set<string>,
-	sender: MessageSender | undefined,
-	persistAgents: () => void,
-): void {
+function checkStaleAgents(ctx: AgentContext): void {
+	const { agents, sender } = ctx;
+
 	const staleIds: number[] = [];
 	for (const [id, agent] of agents) {
 		// 僅檢查自動收養的代理（無受管理的進程、無 tmux 會話）
@@ -228,22 +195,18 @@ function checkStaleAgents(
 		}
 	}
 	for (const id of staleIds) {
-		removeAgent(id, agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers, jsonlPollTimers, knownJsonlFiles, persistAgents);
+		removeAgent(id, ctx);
 		sender?.postMessage({ type: 'agentClosed', id });
 	}
 }
 
+/** 將代理重新指派到新的 JSONL 檔案（例如 /clear 後建立的新檔案） */
 export function reassignAgentToFile(
 	agentId: number,
 	newFilePath: string,
-	agents: Map<number, AgentState>,
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	sender: MessageSender | undefined,
-	persistAgents: () => void,
+	ctx: AgentContext,
 ): void {
+	const { agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers, sender, persistAgents } = ctx;
 	const agent = agents.get(agentId);
 	if (!agent) return;
 
@@ -262,6 +225,6 @@ export function reassignAgentToFile(
 	agent.lineBuffer = '';
 	persistAgents();
 
-	startFileWatching(agentId, newFilePath, agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers, sender);
-	readNewLines(agentId, agents, waitingTimers, permissionTimers, sender);
+	startFileWatching(agentId, newFilePath, ctx);
+	readNewLines(agentId, ctx);
 }

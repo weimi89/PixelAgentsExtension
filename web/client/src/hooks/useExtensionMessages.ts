@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { OfficeState } from '../office/engine/officeState.js'
 import type { OfficeLayout, ToolActivity } from '../office/types.js'
+import type { ServerMessage } from '../types/messages.js'
 import { extractToolName } from '../office/toolUtils.js'
 import { migrateLayoutColors } from '../office/layout/layoutSerializer.js'
 import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js'
@@ -77,15 +78,15 @@ export function useExtensionMessages(
     let pendingAgents: Array<{ id: number; palette?: number; hueShift?: number; seatId?: string }> = []
 
     const handler = (data: unknown) => {
-      const msg = data as Record<string, unknown>
+      const msg = data as ServerMessage
       const os = getOfficeState()
 
       if (msg.type === 'layoutLoaded') {
         if (layoutReadyRef.current && isEditDirty?.()) {
-          console.log('[Webview] Skipping external layout update — editor has unsaved changes')
+          console.log('[Webview] 跳過外部佈局更新 — 編輯器有未儲存的變更')
           return
         }
-        const rawLayout = msg.layout as OfficeLayout | null
+        const rawLayout = msg.layout
         const layout = rawLayout && rawLayout.version === 1 ? migrateLayoutColors(rawLayout) : null
         if (layout) {
           os.rebuildFromLayout(layout)
@@ -103,13 +104,13 @@ export function useExtensionMessages(
           saveAgentSeats(os)
         }
       } else if (msg.type === 'agentCreated') {
-        const id = msg.id as number
+        const { id } = msg
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]))
         setSelectedAgent(id)
         os.addAgent(id)
         saveAgentSeats(os)
       } else if (msg.type === 'agentClosed') {
-        const id = msg.id as number
+        const { id } = msg
         setAgents((prev) => prev.filter((a) => a !== id))
         setSelectedAgent((prev) => (prev === id ? null : prev))
         setAgentTools((prev) => {
@@ -140,8 +141,8 @@ export function useExtensionMessages(
         setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id))
         os.removeAgent(id)
       } else if (msg.type === 'existingAgents') {
-        const incoming = msg.agents as number[]
-        const meta = (msg.agentMeta || {}) as Record<number, { palette?: number; hueShift?: number; seatId?: string }>
+        const incoming = msg.agents
+        const meta = msg.agentMeta || ({} as Record<number, { palette?: number; hueShift?: number; seatId?: string }>)
         for (const id of incoming) {
           const m = meta[id]
           if (layoutReadyRef.current) {
@@ -164,9 +165,7 @@ export function useExtensionMessages(
           return merged.sort((a, b) => a - b)
         })
       } else if (msg.type === 'agentToolStart') {
-        const id = msg.id as number
-        const toolId = msg.toolId as string
-        const status = msg.status as string
+        const { id, toolId, status } = msg
         setAgentTools((prev) => {
           const list = prev[id] || []
           if (list.some((t) => t.toolId === toolId)) return prev
@@ -185,8 +184,7 @@ export function useExtensionMessages(
           })
         }
       } else if (msg.type === 'agentToolDone') {
-        const id = msg.id as number
-        const toolId = msg.toolId as string
+        const { id, toolId } = msg
         setAgentTools((prev) => {
           const list = prev[id]
           if (!list) return prev
@@ -196,7 +194,7 @@ export function useExtensionMessages(
           }
         })
       } else if (msg.type === 'agentToolsClear') {
-        const id = msg.id as number
+        const { id } = msg
         setAgentTools((prev) => {
           if (!(id in prev)) return prev
           const next = { ...prev }
@@ -214,11 +212,10 @@ export function useExtensionMessages(
         os.setAgentTool(id, null)
         os.clearPermissionBubble(id)
       } else if (msg.type === 'agentSelected') {
-        const id = msg.id as number
+        const { id } = msg
         setSelectedAgent(id)
       } else if (msg.type === 'agentStatus') {
-        const id = msg.id as number
-        const status = msg.status as string
+        const { id, status } = msg
         setAgentStatuses((prev) => {
           if (status === 'active') {
             if (!(id in prev)) return prev
@@ -234,7 +231,7 @@ export function useExtensionMessages(
           playDoneSound()
         }
       } else if (msg.type === 'agentToolPermission') {
-        const id = msg.id as number
+        const { id } = msg
         setAgentTools((prev) => {
           const list = prev[id]
           if (!list) return prev
@@ -245,14 +242,13 @@ export function useExtensionMessages(
         })
         os.showPermissionBubble(id)
       } else if (msg.type === 'subagentToolPermission') {
-        const id = msg.id as number
-        const parentToolId = msg.parentToolId as string
+        const { id, parentToolId } = msg
         const subId = os.getSubagentId(id, parentToolId)
         if (subId !== null) {
           os.showPermissionBubble(subId)
         }
       } else if (msg.type === 'agentToolPermissionClear') {
-        const id = msg.id as number
+        const { id } = msg
         setAgentTools((prev) => {
           const list = prev[id]
           if (!list) return prev
@@ -270,10 +266,7 @@ export function useExtensionMessages(
           }
         }
       } else if (msg.type === 'subagentToolStart') {
-        const id = msg.id as number
-        const parentToolId = msg.parentToolId as string
-        const toolId = msg.toolId as string
-        const status = msg.status as string
+        const { id, parentToolId, toolId, status } = msg
         setSubagentTools((prev) => {
           const agentSubs = prev[id] || {}
           const list = agentSubs[parentToolId] || []
@@ -287,9 +280,7 @@ export function useExtensionMessages(
           os.setAgentActive(subId, true)
         }
       } else if (msg.type === 'subagentToolDone') {
-        const id = msg.id as number
-        const parentToolId = msg.parentToolId as string
-        const toolId = msg.toolId as string
+        const { id, parentToolId, toolId } = msg
         setSubagentTools((prev) => {
           const agentSubs = prev[id]
           if (!agentSubs) return prev
@@ -301,8 +292,7 @@ export function useExtensionMessages(
           }
         })
       } else if (msg.type === 'subagentClear') {
-        const id = msg.id as number
-        const parentToolId = msg.parentToolId as string
+        const { id, parentToolId } = msg
         setSubagentTools((prev) => {
           const agentSubs = prev[id]
           if (!agentSubs || !(parentToolId in agentSubs)) return prev
@@ -318,40 +308,36 @@ export function useExtensionMessages(
         os.removeSubagent(id, parentToolId)
         setSubagentCharacters((prev) => prev.filter((s) => !(s.parentAgentId === id && s.parentToolId === parentToolId)))
       } else if (msg.type === 'agentDetached') {
-        const id = msg.id as number
-        const detached = msg.detached as boolean
+        const { id, detached } = msg
         os.setAgentDetached(id, detached)
       } else if (msg.type === 'agentModel') {
-        const id = msg.id as number
-        const model = msg.model as string
+        const { id, model } = msg
         setAgentModels((prev) => {
           if (prev[id] === model) return prev
           return { ...prev, [id]: model }
         })
       } else if (msg.type === 'characterSpritesLoaded') {
-        const characters = msg.characters as Array<{ down: string[][][]; up: string[][][]; right: string[][][] }>
-        console.log(`[Webview] Received ${characters.length} pre-colored character sprites`)
+        const { characters } = msg
+        console.log(`[Webview] 收到 ${characters.length} 個預著色角色精靈圖`)
         setCharacterTemplates(characters)
       } else if (msg.type === 'floorTilesLoaded') {
-        const sprites = msg.sprites as string[][][]
-        console.log(`[Webview] Received ${sprites.length} floor tile patterns`)
+        const { sprites } = msg
+        console.log(`[Webview] 收到 ${sprites.length} 個地板花紋`)
         setFloorSprites(sprites)
       } else if (msg.type === 'wallTilesLoaded') {
-        const sprites = msg.sprites as string[][][]
-        console.log(`[Webview] Received ${sprites.length} wall tile sprites`)
+        const { sprites } = msg
+        console.log(`[Webview] 收到 ${sprites.length} 個牆磚精靈圖`)
         setWallSprites(sprites)
       } else if (msg.type === 'settingsLoaded') {
-        const soundOn = msg.soundEnabled as boolean
-        setSoundEnabled(soundOn)
+        setSoundEnabled(msg.soundEnabled)
       } else if (msg.type === 'furnitureAssetsLoaded') {
         try {
-          const catalog = msg.catalog as FurnitureAsset[]
-          const sprites = msg.sprites as Record<string, string[][]>
-          console.log(`Webview: Loaded ${catalog.length} furniture assets`)
+          const { catalog, sprites } = msg
+          console.log(`Webview: 載入了 ${catalog.length} 個家具素材`)
           buildDynamicCatalog({ catalog, sprites })
           setLoadedAssets({ catalog, sprites })
         } catch (err) {
-          console.error(`Webview: Error processing furnitureAssetsLoaded:`, err)
+          console.error(`Webview: 處理 furnitureAssetsLoaded 時發生錯誤:`, err)
         }
       }
     }

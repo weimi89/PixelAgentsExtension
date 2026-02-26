@@ -1,4 +1,5 @@
 import type { ChildProcess } from 'child_process';
+import type { FSWatcher } from 'fs';
 
 export interface MessageSender {
 	postMessage(msg: unknown): void;
@@ -35,4 +36,19 @@ export interface PersistedAgent {
 	hueShift?: number;
 	seatId?: string;
 	tmuxSessionName?: string;
+}
+
+/** 代理上下文 — 集中管理所有共享狀態與計時器，避免函式傳遞大量參數 */
+export interface AgentContext {
+	agents: Map<number, AgentState>;
+	nextAgentIdRef: { current: number };
+	activeAgentIdRef: { current: number | null };
+	knownJsonlFiles: Set<string>;
+	fileWatchers: Map<number, FSWatcher>;
+	pollingTimers: Map<number, ReturnType<typeof setInterval>>;
+	waitingTimers: Map<number, ReturnType<typeof setTimeout>>;
+	permissionTimers: Map<number, ReturnType<typeof setTimeout>>;
+	jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>;
+	sender: MessageSender | undefined;
+	persistAgents: () => void;
 }

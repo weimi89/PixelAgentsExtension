@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { formatToolStatus, processTranscriptLine, PERMISSION_EXEMPT_TOOLS } from '../src/transcriptParser.js';
-import type { AgentState, MessageSender } from '../src/types.js';
+import type { AgentState, AgentContext, MessageSender } from '../src/types.js';
 
 // ── formatToolStatus ────────────────────────────────────────
 
@@ -129,24 +129,38 @@ describe('processTranscriptLine', () => {
 	let waitingTimers: Map<number, ReturnType<typeof setTimeout>>;
 	let permissionTimers: Map<number, ReturnType<typeof setTimeout>>;
 	let sender: ReturnType<typeof createSender>;
+	let ctx: AgentContext;
 
 	beforeEach(() => {
 		agents = new Map();
 		waitingTimers = new Map();
 		permissionTimers = new Map();
 		sender = createSender();
+		ctx = {
+			agents,
+			nextAgentIdRef: { current: 1 },
+			activeAgentIdRef: { current: null },
+			knownJsonlFiles: new Set(),
+			fileWatchers: new Map(),
+			pollingTimers: new Map(),
+			waitingTimers,
+			permissionTimers,
+			jsonlPollTimers: new Map(),
+			sender,
+			persistAgents: () => {},
+		} as AgentContext;
 		vi.useFakeTimers();
 	});
 
 	it('ignores malformed JSON', () => {
 		agents.set(1, createAgent());
-		processTranscriptLine(1, 'not json', agents, waitingTimers, permissionTimers, sender);
+		processTranscriptLine(1, 'not json', ctx);
 		expect(sender.messages).toHaveLength(0);
 	});
 
 	it('ignores line for unknown agent', () => {
 		const line = JSON.stringify({ type: 'assistant', message: { content: [] } });
-		processTranscriptLine(99, line, agents, waitingTimers, permissionTimers, sender);
+		processTranscriptLine(99, line, ctx);
 		expect(sender.messages).toHaveLength(0);
 	});
 
@@ -157,7 +171,7 @@ describe('processTranscriptLine', () => {
 			type: 'assistant',
 			message: { model: 'claude-sonnet-4-6', content: [{ type: 'text', text: 'hello' }] },
 		});
-		processTranscriptLine(1, line, agents, waitingTimers, permissionTimers, sender);
+		processTranscriptLine(1, line, ctx);
 		expect(agent.model).toBe('claude-sonnet-4-6');
 		expect(sender.messages).toContainEqual({ type: 'agentModel', id: 1, model: 'claude-sonnet-4-6' });
 	});
@@ -173,7 +187,7 @@ describe('processTranscriptLine', () => {
 				],
 			},
 		});
-		processTranscriptLine(1, line, agents, waitingTimers, permissionTimers, sender);
+		processTranscriptLine(1, line, ctx);
 		expect(agent.activeToolIds.has('tool-1')).toBe(true);
 		expect(agent.hadToolsInTurn).toBe(true);
 		expect(sender.messages).toContainEqual({
@@ -193,7 +207,7 @@ describe('processTranscriptLine', () => {
 			type: 'user',
 			message: { content: [{ type: 'tool_result', tool_use_id: 'tool-1' }] },
 		});
-		processTranscriptLine(1, line, agents, waitingTimers, permissionTimers, sender);
+		processTranscriptLine(1, line, ctx);
 
 		expect(agent.activeToolIds.has('tool-1')).toBe(false);
 
@@ -211,7 +225,7 @@ describe('processTranscriptLine', () => {
 		agents.set(1, agent);
 
 		const line = JSON.stringify({ type: 'system', subtype: 'turn_duration' });
-		processTranscriptLine(1, line, agents, waitingTimers, permissionTimers, sender);
+		processTranscriptLine(1, line, ctx);
 
 		expect(agent.activeToolIds.size).toBe(0);
 		expect(agent.isWaiting).toBe(true);
@@ -229,7 +243,7 @@ describe('processTranscriptLine', () => {
 			type: 'user',
 			message: { content: 'help me fix this' },
 		});
-		processTranscriptLine(1, line, agents, waitingTimers, permissionTimers, sender);
+		processTranscriptLine(1, line, ctx);
 
 		expect(agent.hadToolsInTurn).toBe(false);
 		expect(sender.messages).toContainEqual({ type: 'agentStatus', id: 1, status: 'active' });

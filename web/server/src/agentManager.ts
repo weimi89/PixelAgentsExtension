@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn, execSync } from 'child_process';
-import type { AgentState, PersistedAgent, MessageSender } from './types.js';
+import type { AgentContext, AgentState, PersistedAgent, MessageSender } from './types.js';
 import { cancelWaitingTimer, cancelPermissionTimer } from './timerManager.js';
 import { startFileWatching, readNewLines } from './fileWatcher.js';
 import { JSONL_POLL_INTERVAL_MS, LAYOUT_FILE_DIR, AGENTS_FILE_NAME } from './constants.js';
@@ -25,11 +25,13 @@ const CLAUDE_BIN = (() => {
 	}
 })();
 
+/** 從工作目錄路徑推導出 Claude 專案目錄路徑 */
 export function getProjectDirPath(cwd: string): string {
 	const dirName = cwd.replace(/[^a-zA-Z0-9-]/g, '-');
 	return path.join(os.homedir(), '.claude', 'projects', dirName);
 }
 
+/** 取得所有 Claude 專案目錄清單 */
 export function getAllProjectDirs(): string[] {
 	const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
 	try {
@@ -44,10 +46,12 @@ export function getAllProjectDirs(): string[] {
 
 // ── 持久化 ─────────────────────────────────────────────
 
+/** 取得代理持久化檔案路徑 */
 function getAgentsFilePath(): string {
 	return path.join(os.homedir(), LAYOUT_FILE_DIR, AGENTS_FILE_NAME);
 }
 
+/** 將所有代理狀態持久化至磁碟 */
 export function savePersistedAgents(agents: Map<number, AgentState>): void {
 	const data: PersistedAgent[] = [];
 	for (const agent of agents.values()) {
@@ -73,6 +77,7 @@ export function savePersistedAgents(agents: Map<number, AgentState>): void {
 	}
 }
 
+/** 從磁碟載入先前持久化的代理資料 */
 export function loadPersistedAgents(): PersistedAgent[] {
 	try {
 		const filePath = getAgentsFilePath();
@@ -85,6 +90,7 @@ export function loadPersistedAgents(): PersistedAgent[] {
 
 // ── 輔助函式：建構不含 CLAUDE* 變數的乾淨環境 ──────────
 
+/** 建構乾淨的環境變數（移除所有 CLAUDE 前綴的變數以避免巢狀偵測） */
 function buildCleanEnv(): Record<string, string | undefined> {
 	const cleanEnv = { ...process.env };
 	for (const key of Object.keys(cleanEnv)) {
@@ -95,8 +101,9 @@ function buildCleanEnv(): Record<string, string | undefined> {
 	return cleanEnv;
 }
 
-// ── 輔助函式：建立代理狀態並啟動檔案輪詢 ───────
+// ── 輔助函式：建立代理狀態 ───────
 
+/** 建立代理初始狀態，包含檔案偏移量與所有追蹤用的資料結構 */
 function createAgentState(
 	id: number,
 	expectedFile: string,
@@ -134,24 +141,20 @@ function createAgentState(
 
 // ── 共用的生成邏輯 ──────────────────────────────────────
 
+/** 生成 Claude 代理進程（透過 tmux 或直接生成），建立狀態並啟動檔案監視 */
 function spawnClaudeAgent(
 	args: string[],
 	cwd: string,
 	expectedFile: string,
 	label: string,
 	sessionUuid: string,
-	nextAgentIdRef: { current: number },
-	agents: Map<number, AgentState>,
-	activeAgentIdRef: { current: number | null },
-	knownJsonlFiles: Set<string>,
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
-	sender: MessageSender | undefined,
-	persistAgents: () => void,
+	ctx: AgentContext,
 ): void {
+	const {
+		nextAgentIdRef, agents, activeAgentIdRef, knownJsonlFiles,
+		jsonlPollTimers, sender, persistAgents,
+	} = ctx;
+
 	const projectDir = path.dirname(expectedFile);
 	knownJsonlFiles.add(expectedFile);
 
@@ -194,11 +197,7 @@ function spawnClaudeAgent(
 
 		proc.on('exit', (code) => {
 			console.log(`[Pixel Agents] Agent ${id}: process exited with code ${code}`);
-			removeAgent(
-				id, agents,
-				fileWatchers, pollingTimers, waitingTimers, permissionTimers,
-				jsonlPollTimers, knownJsonlFiles, persistAgents,
-			);
+			removeAgent(id, ctx);
 			sender?.postMessage({ type: 'agentClosed', id });
 		});
 	}
@@ -209,33 +208,25 @@ function spawnClaudeAgent(
 	console.log(`[Pixel Agents] Agent ${id}: ${label}`);
 	sender?.postMessage({ type: 'agentCreated', id });
 
+	// 輪詢等待 JSONL 檔案出現後開始檔案監視
 	const pollTimer = setInterval(() => {
 		try {
 			if (fs.existsSync(agent.jsonlFile)) {
 				console.log(`[Pixel Agents] Agent ${id}: found JSONL file ${path.basename(agent.jsonlFile)}`);
 				clearInterval(pollTimer);
 				jsonlPollTimers.delete(id);
-				startFileWatching(id, agent.jsonlFile, agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers, sender);
-				readNewLines(id, agents, waitingTimers, permissionTimers, sender);
+				startFileWatching(id, agent.jsonlFile, ctx);
+				readNewLines(id, ctx);
 			}
 		} catch { /* 檔案可能尚不存在 */ }
 	}, JSONL_POLL_INTERVAL_MS);
 	jsonlPollTimers.set(id, pollTimer);
 }
 
+/** 啟動新的 Claude 代理會話 */
 export function launchNewAgent(
 	cwd: string,
-	nextAgentIdRef: { current: number },
-	agents: Map<number, AgentState>,
-	activeAgentIdRef: { current: number | null },
-	knownJsonlFiles: Set<string>,
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
-	sender: MessageSender | undefined,
-	persistAgents: () => void,
+	ctx: AgentContext,
 ): void {
 	const sessionId = crypto.randomUUID();
 	const projectDir = getProjectDirPath(cwd);
@@ -244,52 +235,36 @@ export function launchNewAgent(
 	spawnClaudeAgent(
 		['--session-id', sessionId], cwd, expectedFile,
 		`spawned claude --session-id ${sessionId}`,
-		sessionId,
-		nextAgentIdRef, agents, activeAgentIdRef, knownJsonlFiles,
-		fileWatchers, pollingTimers, waitingTimers, permissionTimers,
-		jsonlPollTimers, sender, persistAgents,
+		sessionId, ctx,
 	);
 }
 
+/** 恢復既有的 Claude 會話 */
 export function resumeSession(
 	sessionId: string,
 	sessionProjectDir: string,
 	cwd: string,
-	nextAgentIdRef: { current: number },
-	agents: Map<number, AgentState>,
-	activeAgentIdRef: { current: number | null },
-	knownJsonlFiles: Set<string>,
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
-	sender: MessageSender | undefined,
-	persistAgents: () => void,
+	ctx: AgentContext,
 ): void {
 	const expectedFile = path.join(sessionProjectDir, `${sessionId}.jsonl`);
 
 	spawnClaudeAgent(
 		['--resume', sessionId], cwd, expectedFile,
 		`resumed session ${sessionId}`,
-		sessionId,
-		nextAgentIdRef, agents, activeAgentIdRef, knownJsonlFiles,
-		fileWatchers, pollingTimers, waitingTimers, permissionTimers,
-		jsonlPollTimers, sender, persistAgents,
+		sessionId, ctx,
 	);
 }
 
+/** 移除代理：清理所有計時器、監視器，並從狀態中刪除 */
 export function removeAgent(
 	agentId: number,
-	agents: Map<number, AgentState>,
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
-	knownJsonlFiles: Set<string>,
-	persistAgents: () => void,
+	ctx: AgentContext,
 ): void {
+	const {
+		agents, fileWatchers, pollingTimers, waitingTimers,
+		permissionTimers, jsonlPollTimers, knownJsonlFiles, persistAgents,
+	} = ctx;
+
 	const agent = agents.get(agentId);
 	if (!agent) return;
 
@@ -313,18 +288,12 @@ export function removeAgent(
 	persistAgents();
 }
 
+/** 關閉代理：終止 tmux 會話或直接進程，然後移除代理 */
 export function closeAgent(
 	agentId: number,
-	agents: Map<number, AgentState>,
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
-	knownJsonlFiles: Set<string>,
-	sender: MessageSender | undefined,
-	persistAgents: () => void,
+	ctx: AgentContext,
 ): void {
+	const { agents, sender } = ctx;
 	const agent = agents.get(agentId);
 	if (!agent) return;
 
@@ -338,23 +307,18 @@ export function closeAgent(
 		agent.process.kill('SIGTERM');
 	}
 
-	removeAgent(agentId, agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers, jsonlPollTimers, knownJsonlFiles, persistAgents);
+	removeAgent(agentId, ctx);
 	sender?.postMessage({ type: 'agentClosed', id: agentId });
 }
 
 // ── 伺服器重啟時的 tmux 恢復 ─────────────────────────
 
+/** 恢復上次伺服器執行中遺留的 tmux 代理會話 */
 export function recoverTmuxAgents(
-	nextAgentIdRef: { current: number },
-	agents: Map<number, AgentState>,
-	knownJsonlFiles: Set<string>,
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	sender: MessageSender | undefined,
-	persistAgents: () => void,
+	ctx: AgentContext,
 ): number {
+	const { nextAgentIdRef, agents, knownJsonlFiles, sender, persistAgents } = ctx;
+
 	if (!isTmuxAvailable()) return 0;
 
 	// 找出所有存活的 pixel-agents tmux 會話
@@ -415,8 +379,8 @@ export function recoverTmuxAgents(
 		sender?.postMessage({ type: 'agentCreated', id });
 
 		// 啟動檔案監視
-		startFileWatching(id, jsonlFile, agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers, sender);
-		readNewLines(id, agents, waitingTimers, permissionTimers, sender);
+		startFileWatching(id, jsonlFile, ctx);
+		readNewLines(id, ctx);
 
 		recovered++;
 	}
@@ -431,27 +395,23 @@ export function recoverTmuxAgents(
 
 // ── tmux 健康檢查 ───────────────────────────────────────
 
+/** 檢查所有 tmux 代理的會話是否仍存活，移除已失效的代理 */
 export function checkTmuxHealth(
-	agents: Map<number, AgentState>,
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
-	knownJsonlFiles: Set<string>,
-	sender: MessageSender | undefined,
-	persistAgents: () => void,
+	ctx: AgentContext,
 ): void {
+	const { agents, sender } = ctx;
+
 	for (const [agentId, agent] of agents) {
 		if (!agent.tmuxSessionName) continue;
 		if (!isTmuxSessionAlive(agent.tmuxSessionName)) {
 			console.log(`[Pixel Agents] tmux session ${agent.tmuxSessionName} died, removing agent ${agentId}`);
-			removeAgent(agentId, agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers, jsonlPollTimers, knownJsonlFiles, persistAgents);
+			removeAgent(agentId, ctx);
 			sender?.postMessage({ type: 'agentClosed', id: agentId });
 		}
 	}
 }
 
+/** 發送現有代理清單與其當前狀態至客戶端（此函式不需要完整 context） */
 export function sendExistingAgents(
 	agents: Map<number, AgentState>,
 	agentMeta: Record<string, { palette?: number; hueShift?: number; seatId?: string }>,

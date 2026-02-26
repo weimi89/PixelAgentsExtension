@@ -17,6 +17,7 @@ import { DebugView } from './components/DebugView.js'
 import { AgentLabels } from './components/AgentLabels.js'
 import { SessionPicker } from './components/SessionPicker.js'
 import type { SessionInfo } from './components/SessionPicker.js'
+import type { ServerMessage } from './types/messages.js'
 import { t } from './i18n.js'
 
 // 遊戲狀態存在於 React 之外 — 由訊息處理器以命令式方式更新
@@ -152,9 +153,9 @@ function App() {
 
   useEffect(() => {
     const unsub = onServerMessage((data) => {
-      const msg = data as Record<string, unknown>
+      const msg = data as ServerMessage
       if (msg.type === 'sessionsList') {
-        setSessions(msg.sessions as SessionInfo[])
+        setSessions(msg.sessions)
         setIsLoadingSessions(false)
       }
     })

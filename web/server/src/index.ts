@@ -8,7 +8,7 @@ import { Server } from 'socket.io';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-import type { AgentState, MessageSender } from './types.js';
+import type { AgentContext, AgentState, MessageSender } from './types.js';
 import {
 	loadFurnitureAssets,
 	loadFloorTiles,
@@ -90,17 +90,31 @@ function persistAgents(): void {
 	savePersistedAgents(agents);
 }
 
+// ── AgentContext — 集中管理的共享狀態 ──────────────────────
+
+/** 暫時的 sender 佔位 — 在 socket 連線時更新 */
+const ctx: AgentContext = {
+	agents,
+	nextAgentIdRef,
+	activeAgentIdRef,
+	knownJsonlFiles,
+	fileWatchers,
+	pollingTimers,
+	waitingTimers,
+	permissionTimers,
+	jsonlPollTimers,
+	sender: undefined,
+	persistAgents,
+};
+
 // ── tmux 健康檢查 ───────────────────────────────────────
 
 let tmuxHealthTimer: ReturnType<typeof setInterval> | null = null;
 
-function startTmuxHealthCheck(sender: MessageSender): void {
+function startTmuxHealthCheck(): void {
 	if (tmuxHealthTimer) return;
 	tmuxHealthTimer = setInterval(() => {
-		checkTmuxHealth(
-			agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers,
-			jsonlPollTimers, knownJsonlFiles, sender, persistAgents,
-		);
+		checkTmuxHealth(ctx);
 	}, TMUX_HEALTH_CHECK_INTERVAL_MS);
 }
 
@@ -160,7 +174,12 @@ async function main(): Promise<void> {
 	const app = express();
 	const httpServer = createServer(app);
 	const io = new Server(httpServer, {
-		cors: { origin: '*' },
+		cors: {
+			origin: [
+				`http://localhost:${port}`,
+				'http://localhost:5173', // Vite 開發伺服器
+			],
+		},
 		maxHttpBufferSize: 10 * 1024 * 1024, // 10MB，用於大型素材傳輸
 	});
 
@@ -179,6 +198,9 @@ async function main(): Promise<void> {
 				socket.emit('message', msg);
 			},
 		};
+
+		// 更新 context 中的 sender
+		ctx.sender = sender;
 
 		socket.on('message', (msg: Record<string, unknown>) => {
 			handleClientMessage(msg, sender);
@@ -254,46 +276,27 @@ function handleClientMessage(msg: Record<string, unknown>, sender: MessageSender
 				// 在專案掃描之前，從上一次伺服器執行中恢復 tmux 代理（僅一次）
 				if (!tmuxRecoveredRef.current) {
 					tmuxRecoveredRef.current = true;
-					recoverTmuxAgents(
-						nextAgentIdRef, agents, knownJsonlFiles,
-						fileWatchers, pollingTimers, waitingTimers, permissionTimers,
-						sender, persistAgents,
-					);
+					recoverTmuxAgents(ctx);
 				}
 				// 恢復後重新傳送現有代理（包含已恢復的 tmux 代理）
 				sendExistingAgents(agents, agentMeta, sender);
 
 				// 啟動專案掃描 — 自動偵測所有專案中正在執行的 Claude 會話
 				const projectDirs = getAllProjectDirs();
-				ensureProjectScan(
-					projectDirs, knownJsonlFiles, projectScanTimerRef,
-					nextAgentIdRef, agents,
-					fileWatchers, pollingTimers, waitingTimers, permissionTimers,
-					jsonlPollTimers, sender, persistAgents,
-				);
+				ensureProjectScan(projectDirs, projectScanTimerRef, ctx);
 
 				// 啟動 tmux 健康檢查
-				startTmuxHealthCheck(sender);
+				startTmuxHealthCheck();
 			}
 			break;
 		}
 		case 'openClaude': {
-			launchNewAgent(
-				cwd,
-				nextAgentIdRef, agents, activeAgentIdRef, knownJsonlFiles,
-				fileWatchers, pollingTimers, waitingTimers, permissionTimers,
-				jsonlPollTimers,
-				sender, persistAgents,
-			);
+			launchNewAgent(cwd, ctx);
 			break;
 		}
 		case 'closeAgent': {
 			const id = msg.id as number;
-			closeAgent(
-				id, agents,
-				fileWatchers, pollingTimers, waitingTimers, permissionTimers,
-				jsonlPollTimers, knownJsonlFiles, sender, persistAgents,
-			);
+			closeAgent(id, ctx);
 			break;
 		}
 		case 'focusAgent': {
@@ -322,12 +325,7 @@ function handleClientMessage(msg: Record<string, unknown>, sender: MessageSender
 		case 'resumeSession': {
 			const sessionId = msg.sessionId as string;
 			const sessionProjectDir = msg.projectDir as string;
-			resumeSession(
-				sessionId, sessionProjectDir, cwd,
-				nextAgentIdRef, agents, activeAgentIdRef, knownJsonlFiles,
-				fileWatchers, pollingTimers, waitingTimers, permissionTimers,
-				jsonlPollTimers, sender, persistAgents,
-			);
+			resumeSession(sessionId, sessionProjectDir, cwd, ctx);
 			break;
 		}
 		case 'requestExportLayout': {
