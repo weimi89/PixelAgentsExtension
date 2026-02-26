@@ -1,61 +1,53 @@
-# Pixel Agents — Compressed Reference
+# OnlinePixelAgents — Compressed Reference
 
-VS Code extension with embedded React webview: pixel art office where AI agents (Claude Code terminals) are animated characters.
+Web application (Express + Socket.IO) forked from [pablodelucca/pixel-agents](https://github.com/pablodelucca/pixel-agents) VS Code extension. Pixel art office where AI agents (Claude Code sessions) are animated characters in a browser.
 
 ## Architecture
 
-```
-src/                          — Extension backend (Node.js, VS Code API)
-  constants.ts                — All backend magic numbers/strings (timing, truncation, asset parsing, VS Code IDs)
-  extension.ts                — Entry: activate(), deactivate()
-  PixelAgentsViewProvider.ts   — WebviewViewProvider, message dispatch, asset loading
-  assetLoader.ts              — PNG parsing, sprite conversion, catalog building, default layout loading
-  agentManager.ts             — Terminal lifecycle: launch, remove, restore, persist
-  layoutPersistence.ts        — User-level layout file I/O (~/.pixel-agents/layout.json), migration, cross-window watching
-  fileWatcher.ts              — fs.watch + polling, readNewLines, /clear detection, terminal adoption
-  transcriptParser.ts         — JSONL parsing: tool_use/tool_result → webview messages
-  timerManager.ts             — Waiting/permission timer logic
-  types.ts                    — Shared interfaces (AgentState, PersistedAgent)
+**Active development is in `web/`.** Original VS Code extension code remains in `src/` + `webview-ui/` for reference.
 
-webview-ui/src/               — React + TypeScript (Vite)
-  constants.ts                — All webview magic numbers/strings (grid, animation, rendering, camera, zoom, editor, game logic, notification sound)
-  notificationSound.ts        — Web Audio API chime on agent turn completion, with enable/disable
-  App.tsx                     — Composition root, hooks + components + EditActionBar
-  hooks/
-    useExtensionMessages.ts   — Message handler + agent/tool state
-    useEditorActions.ts       — Editor state + callbacks
-    useEditorKeyboard.ts      — Keyboard shortcut effect
-  components/
-    BottomToolbar.tsx          — + Agent, Layout toggle, Settings button
-    ZoomControls.tsx           — +/- zoom (top-right)
-    SettingsModal.tsx          — Centered modal: settings, export/import layout, sound toggle, debug toggle
-    DebugView.tsx              — Debug overlay
-  office/
-    types.ts                  — Interfaces (OfficeLayout, FloorColor, Character, etc.) + re-exports constants from constants.ts
-    toolUtils.ts              — STATUS_TO_TOOL mapping, extractToolName(), defaultZoom()
-    colorize.ts               — Dual-mode color module: Colorize (grayscale→HSL) + Adjust (HSL shift)
-    floorTiles.ts             — Floor sprite storage + colorized cache
-    wallTiles.ts              — Wall auto-tile: 16 bitmask sprites from walls.png
-    sprites/
-      spriteData.ts           — Pixel data: characters (6 pre-colored from PNGs, fallback templates), furniture, tiles, bubbles
-      spriteCache.ts          — SpriteData → offscreen canvas, per-zoom WeakMap cache, outline sprites
-    editor/
-      editorActions.ts        — Pure layout ops: paint, place, remove, move, rotate, toggleState, canPlace, expandLayout
-      editorState.ts          — Imperative state: tools, ghost, selection, undo/redo, dirty, drag
-      EditorToolbar.tsx       — React toolbar/palette for edit mode
-    layout/
-      furnitureCatalog.ts     — Dynamic catalog from loaded assets + getCatalogEntry()
-      layoutSerializer.ts     — OfficeLayout ↔ runtime (tileMap, furniture, seats, blocked)
-      tileMap.ts              — Walkability, BFS pathfinding
-    engine/
-      characters.ts           — Character FSM: idle/walk/type + wander AI
-      officeState.ts          — Game world: layout, characters, seats, selection, subagents
-      gameLoop.ts             — rAF loop with delta time (capped 0.1s)
-      renderer.ts             — Canvas: tiles, z-sorted entities, overlays, edit UI
-      matrixEffect.ts         — Matrix-style spawn/despawn digital rain effect
-    components/
-      OfficeCanvas.tsx        — Canvas, resize, DPR, mouse hit-testing, edit interactions, drag-to-move
-      ToolOverlay.tsx          — Activity status label above hovered/selected character + close button
+```
+web/
+  server/                     — Express + Socket.IO backend (Node.js)
+    src/
+      index.ts                — Entry: Express static + Socket.IO connection handler
+      agentManager.ts         — Agent lifecycle: spawn Claude process, auto-detect, cleanup
+      fileWatcher.ts          — fs.watch + 2s polling, JSONL incremental read, auto-adopt
+      transcriptParser.ts     — JSONL parsing: tool_use/tool_result → Socket.IO messages
+      assetLoader.ts          — PNG parsing, sprite conversion, catalog building, default layout
+      layoutPersistence.ts    — ~/.pixel-agents/layout.json read/write
+      timerManager.ts         — Waiting/permission timer logic
+      demoMode.ts             — Demo mode: simulated agent behavior sequences (--demo flag)
+      constants.ts            — Server constants (timing, truncation, parsing, port 3000)
+      types.ts                — Shared interfaces (AgentState, MessageSender)
+
+  client/                     — React + TypeScript (Vite)
+    src/
+      App.tsx                 — Composition root, hooks + components + EditActionBar
+      socketApi.ts            — Socket.IO ↔ vscode.postMessage() compatibility layer
+      i18n.ts                 — Traditional Chinese (繁體中文) localization strings
+      constants.ts            — Grid/animation/rendering/camera/zoom/editor/game constants
+      notificationSound.ts   — Web Audio API chime on agent turn completion
+      hooks/
+        useExtensionMessages.ts — Socket.IO message → officeState sync
+        useEditorActions.ts     — Editor state + callbacks
+        useEditorKeyboard.ts    — Keyboard shortcut effect
+      components/
+        BottomToolbar.tsx      — + Agent, Layout toggle, Settings button
+        ZoomControls.tsx       — +/- zoom (top-right)
+        SettingsModal.tsx      — Settings, export/import layout, sound toggle, debug toggle
+        DebugView.tsx          — Debug overlay
+        AgentLabels.tsx        — Agent name labels
+      office/                 — Game engine (same structure as webview-ui/src/office/)
+        types.ts, toolUtils.ts, colorize.ts, floorTiles.ts, wallTiles.ts
+        sprites/              — spriteData.ts, spriteCache.ts
+        editor/               — editorActions.ts, editorState.ts, EditorToolbar.tsx
+        layout/               — furnitureCatalog.ts, layoutSerializer.ts, tileMap.ts
+        engine/               — characters.ts, officeState.ts, gameLoop.ts, renderer.ts, matrixEffect.ts
+        components/           — OfficeCanvas.tsx, ToolOverlay.tsx
+
+src/                          — Original VS Code extension backend (reference only)
+webview-ui/                   — Original VS Code webview (reference only)
 
 scripts/                      — 7-stage asset extraction pipeline
   0-import-tileset.ts         — Interactive CLI wrapper
@@ -64,20 +56,42 @@ scripts/                      — 7-stage asset extraction pipeline
   3-vision-inspect.ts         — Claude vision auto-metadata
   4-review-metadata.html      — Browser UI for metadata review
   5-export-assets.ts          — Export PNGs + furniture-catalog.json
-  asset-manager.html          — Unified editor (Stage 2+4 combined), Save/Save As via File System Access API
+  asset-manager.html          — Unified editor (Stage 2+4 combined)
   generate-walls.js           — Generate walls.png (4×4 grid of 16×32 auto-tile pieces)
   wall-tile-editor.html       — Browser UI for editing wall tile appearance
 ```
 
+## Web Version — Key Differences from VS Code Extension
+
+| Aspect | VS Code Extension | Web Version |
+|--------|-------------------|-------------|
+| **Process mgmt** | VS Code Terminal API | `spawn('claude', ...)` child process |
+| **Communication** | `vscode.postMessage()` | Socket.IO (same interface via `socketApi.ts`) |
+| **Agent discovery** | Terminal adoption | JSONL auto-scan across `~/.claude/projects/` |
+| **Asset serving** | esbuild copies to dist/ | Express static + Vite dev server |
+| **Layout persistence** | Same `~/.pixel-agents/layout.json` | Same |
+| **Demo mode** | N/A | `--demo` flag or `DEMO=1` env var |
+| **i18n** | N/A | Built-in Traditional Chinese (`i18n.ts`) |
+
+**socketApi.ts compatibility layer**: Exposes `vscode.postMessage()` interface backed by Socket.IO, so all existing client code works unchanged.
+
+**Auto-detection flow**: `ensureProjectScan()` runs every 1s → scans `~/.claude/projects/*/` for `.jsonl` files → files modified within 30s are "active" → auto-creates agents (process=null for external sessions) → stale agents (60s+ no update) auto-removed.
+
+**Demo mode**: `--demo` flag or `DEMO=1` → spawns N simulated agents (default 3) with cycling tool sequences (Read→Edit→Bash, Glob→Read→Grep→Edit, etc.) including subtask simulation.
+
 ## Core Concepts
 
-**Vocabulary**: Terminal = VS Code terminal running Claude. Session = JSONL conversation file. Agent = webview character bound 1:1 to a terminal.
+**Vocabulary**: Session = JSONL conversation file at `~/.claude/projects/<hash>/`. Agent = animated character bound 1:1 to a session. In VS Code version: Terminal = VS Code terminal running Claude.
 
-**Extension ↔ Webview**: `postMessage` protocol. Key messages: `openClaude`, `agentCreated/Closed`, `focusAgent`, `agentToolStart/Done/Clear`, `agentStatus`, `existingAgents`, `layoutLoaded`, `furnitureAssetsLoaded`, `floorTilesLoaded`, `wallTilesLoaded`, `saveLayout`, `saveAgentSeats`, `exportLayout`, `importLayout`, `settingsLoaded`, `setSoundEnabled`.
+**Server ↔ Client** (Web): Socket.IO `emit('message', msg)` both directions. `socketApi.ts` wraps this as `vscode.postMessage()` for client compatibility. Key messages: `openClaude`, `agentCreated/Closed`, `focusAgent`, `agentToolStart/Done/Clear`, `agentStatus`, `existingAgents`, `layoutLoaded`, `furnitureAssetsLoaded`, `floorTilesLoaded`, `wallTilesLoaded`, `saveLayout`, `saveAgentSeats`, `settingsLoaded`, `setSoundEnabled`, `characterSpritesLoaded`, `subagentToolStart/Done`, `subagentClear`, `agentToolPermission`.
 
-**One-agent-per-terminal**: Each "+ Agent" click → new terminal (`claude --session-id <uuid>`) → immediate agent creation → 1s poll for `<uuid>.jsonl` → file watching starts.
+**Agent creation** (Web): Two paths — (1) Manual: "+ Agent" click → `spawn('claude', ['--session-id', uuid])` → 1s poll for JSONL → file watching. (2) Auto-detect: `ensureProjectScan()` discovers active JSONL files → creates agent with `process=null`.
 
-**Terminal adoption**: Project-level 1s scan detects unknown JSONL files. If active terminal has no agent → adopt. If focused agent exists → reassign (`/clear` handling).
+**Extension ↔ Webview** (VS Code): `postMessage` protocol. Same message types as above.
+
+**One-agent-per-session**: Each Claude session gets exactly one character. In VS Code: one terminal = one agent.
+
+**Auto-detection** (Web only): 1s interval scans all `~/.claude/projects/*/` directories for `.jsonl` files modified within 30s. New files → auto-create agent. Stale agents (60s+ no update) → auto-remove.
 
 ## Agent Status Tracking
 
@@ -172,6 +186,18 @@ Toggle via "Layout" button. Tools: SELECT (default), Floor paint, Wall paint, Er
 
 ## Build & Dev
 
+### Web Version (primary)
+
+```sh
+cd web && npm install && npm run build && npm start
+```
+
+Dev mode (hot reload): `cd web && npm run dev` — starts Vite (client :5173) + tsx watch (server :3000).
+
+Demo mode: `cd web/server && node dist/index.js --demo` or `DEMO_AGENTS=5 DEMO=1 node dist/index.js`.
+
+### VS Code Extension (reference)
+
 ```sh
 npm install && cd webview-ui && npm install && cd .. && npm run build
 ```
@@ -199,15 +225,18 @@ All magic numbers and strings are centralized — never add inline constants to 
 - Terminal `cwd` option sets working directory at creation
 - `/add-dir <path>` grants session access to additional directory
 
-## Windows-MCP (Desktop Automation)
-
-- `uvx --python 3.13 windows-mcp` — Tools: Snapshot, Click, Type, Scroll, Move, Shortcut, App, Shell, Wait, Scrape
-- Webview buttons show `(0,0)` in a11y tree — must use `Snapshot(use_vision=true)` for coordinates
-- Snap both VS Code windows side-by-side on SAME screen before clicking in Extension Dev Host
-- Reload extension via button on main VS Code window after building
-
 ## Key Decisions
 
+### Web Version
+- Express + Socket.IO for real-time communication (replaced VS Code postMessage)
+- `socketApi.ts` compatibility layer — minimal client changes from VS Code version
+- Auto-detection via JSONL scanning (no terminal binding needed)
+- `spawn()` for Claude process management (env vars cleaned to avoid nested detection)
+- Demo mode for UI testing without Claude Code
+- i18n via centralized `t` object in `i18n.ts` (not a framework)
+- Monorepo workspaces: `web/server` + `web/client`
+
+### VS Code Extension (original)
 - `WebviewViewProvider` (not `WebviewPanel`) — lives in panel area alongside terminal
 - Inline esbuild problem matcher (no extra extension needed)
 - Webview is separate Vite project with own `node_modules`/`tsconfig`

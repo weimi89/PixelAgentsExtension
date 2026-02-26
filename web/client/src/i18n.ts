@@ -1,0 +1,76 @@
+// Centralized UI strings — Traditional Chinese localization
+export const t = {
+  // Bottom Toolbar
+  addAgent: '+ 代理',
+  layout: '佈局',
+  editOfficeLayout: '編輯辦公室佈局',
+  settings: '設定',
+
+  // Zoom Controls
+  zoomIn: '放大 (Ctrl+滾輪)',
+  zoomOut: '縮小 (Ctrl+滾輪)',
+
+  // Settings Modal
+  exportLayout: '匯出佈局',
+  importLayout: '匯入佈局',
+  soundNotifications: '音效通知',
+  debugView: '除錯檢視',
+
+  // Agent
+  agent: (id: number) => `代理 #${id}`,
+  closeAgent: '關閉代理',
+
+  // Status
+  needsApproval: '需要核准',
+  idle: '閒置中',
+  mightBeWaiting: '可能正在等待輸入',
+
+  // Editor Toolbar
+  floor: '地板',
+  paintFloorTiles: '繪製地板磚塊',
+  wall: '牆壁',
+  paintWalls: '繪製牆壁（點擊切換）',
+  erase: '清除',
+  eraseTilesToVoid: '清除磚塊為空白',
+  furniture: '家具',
+  placeFurniture: '放置家具',
+  color: '顏色',
+  adjustFloorColor: '調整地板顏色',
+  adjustWallColor: '調整牆壁顏色',
+  adjustFurnitureColor: '調整所選家具顏色',
+  pick: '吸管',
+  pickFloorPattern: '從現有磚塊取色',
+  pickFurnitureType: '從已放置的家具取樣',
+  clearColor: '清除',
+  removeColor: '移除顏色（恢復原始）',
+  colorize: '著色',
+  floorPattern: (index: number) => `地板 ${index}`,
+
+  // Edit Action Bar
+  undo: '復原',
+  undoShortcut: '復原 (Ctrl+Z)',
+  redo: '重做',
+  redoShortcut: '重做 (Ctrl+Y)',
+  save: '儲存',
+  saveLayout: '儲存佈局',
+  reset: '重設',
+  resetToLastSaved: '重設為上次儲存的佈局',
+  resetConfirm: '確定重設？',
+  yes: '是',
+  no: '否',
+
+  // Loading
+  loading: '載入中...',
+
+  // Hints
+  pressRToRotate: '按 <b>R</b> 旋轉',
+
+  // Session Picker
+  sessions: '工作階段',
+  browseSessions: '瀏覽過去的工作階段',
+  noSessions: '沒有找到工作階段',
+  resumeSession: '恢復',
+  activeSession: '進行中',
+  loadingSessions: '載入中...',
+  sessionProject: '專案',
+} as const

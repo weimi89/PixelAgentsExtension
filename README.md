@@ -1,133 +1,145 @@
-# Pixel Agents
+# OnlinePixelAgents
 
-A VS Code extension that turns your AI coding agents into animated pixel art characters in a virtual office.
+像素藝術辦公室，讓你的 AI 程式代理在瀏覽器中變成動畫角色。
 
-Each Claude Code terminal you open spawns a character that walks around, sits at desks, and visually reflects what the agent is doing — typing when writing code, reading when searching files, waiting when it needs your attention.
-
-This is the source code for the free [Pixel Agents extension for VS Code](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) — you can install it directly from the marketplace with the full furniture catalog included.
-
+基於 [pablodelucca/pixel-agents](https://github.com/pablodelucca/pixel-agents)（VS Code 擴充套件）改造為獨立 Web 應用，透過 Express + Socket.IO 伺服器自動偵測本機執行中的 Claude Code 會話，無需 VS Code。
 
 ![Pixel Agents screenshot](webview-ui/public/Screenshot.jpg)
 
-## Features
+## 功能
 
-- **One agent, one character** — every Claude Code terminal gets its own animated character
-- **Live activity tracking** — characters animate based on what the agent is actually doing (writing, reading, running commands)
-- **Office layout editor** — design your office with floors, walls, and furniture using a built-in editor
-- **Speech bubbles** — visual indicators when an agent is waiting for input or needs permission
-- **Sound notifications** — optional chime when an agent finishes its turn
-- **Sub-agent visualization** — Task tool sub-agents spawn as separate characters linked to their parent
-- **Persistent layouts** — your office design is saved and shared across VS Code windows
-- **Diverse characters** — 6 diverse characters.
+- **一個代理，一個角色** — 每個 Claude Code 會話對應一個動畫像素角色
+- **即時狀態追蹤** — 角色動畫反映代理實際操作（撰寫、閱讀、執行指令）
+- **自動偵測** — 伺服器自動掃描 `~/.claude/projects/` 目錄，發現執行中的 Claude Code 會話
+- **辦公室佈局編輯器** — 內建編輯器設計地板、牆壁和家具
+- **對話氣泡** — 視覺提示：代理等待輸入或需要授權
+- **音效通知** — 代理完成回合時的可選提示音
+- **子代理視覺化** — Task 工具的子代理以獨立角色呈現
+- **佈局持久化** — 辦公室設計儲存於 `~/.pixel-agents/layout.json`
+- **演示模式** — 無需實際 Claude 會話，使用 `--demo` 旗標測試 UI
+- **繁體中文介面** — 內建 i18n 本地化支援
+- **6 種多元角色** — 超過 6 個代理時自動套用色相偏移
 
 <p align="center">
   <img src="webview-ui/public/characters.png" alt="Pixel Agents characters" width="320" height="72" style="image-rendering: pixelated;">
 </p>
 
-## Requirements
+## 需求
 
-- VS Code 1.109.0 or later
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
+- Node.js 18+
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) 已安裝並設定
 
-## Getting Started
+## 快速開始
 
-If you just want to use Pixel Agents, the easiest way is to download the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents). If you want to play with the code, develop, or contribute, then:
-
-### Install from source
+### Web 版本（推薦）
 
 ```bash
-git clone https://github.com/pablodelucca/pixel-agents.git
-cd pixel-agents
+git clone https://github.com/RD-CAT/OnlinePixelAgents.git
+cd OnlinePixelAgents/web
 npm install
-cd webview-ui && npm install && cd ..
 npm run build
+npm start
 ```
 
-Then press **F5** in VS Code to launch the Extension Development Host.
+瀏覽器開啟 `http://localhost:3000`。
 
-### Usage
+### 開發模式
 
-1. Open the **Pixel Agents** panel (it appears in the bottom panel area alongside your terminal)
-2. Click **+ Agent** to spawn a new Claude Code terminal and its character
-3. Start coding with Claude — watch the character react in real time
-4. Click a character to select it, then click a seat to reassign it
-5. Click **Layout** to open the office editor and customize your space
+```bash
+cd web
+npm run dev
+```
 
-## Layout Editor
+同時啟動 Vite 開發伺服器（客戶端熱重載）和 tsx watch（伺服器熱重載）。
 
-The built-in editor lets you design your office:
+### 演示模式
 
-- **Floor** — Full HSB color control
-- **Walls** — Auto-tiling walls with color customization
-- **Tools** — Select, paint, erase, place, eyedropper, pick
-- **Undo/Redo** — 50 levels with Ctrl+Z / Ctrl+Y
-- **Export/Import** — Share layouts as JSON files via the Settings modal
+無需 Claude Code，純 UI 測試：
 
-The grid is expandable up to 64×64 tiles. Click the ghost border outside the current grid to grow it.
+```bash
+cd web/server
+node dist/index.js --demo
+# 或指定代理數量
+DEMO_AGENTS=5 node dist/index.js --demo
+```
 
-### Office Assets
+### 使用方式
 
-The office tileset used in this project and available via the extension is **[Office Interior Tileset (16x16)](https://donarg.itch.io/officetileset)** by **Donarg**, available on itch.io for **$2 USD**.
+1. 啟動 Web 伺服器後開啟瀏覽器
+2. 伺服器會自動掃描並偵測本機執行中的 Claude Code 會話
+3. 偵測到的會話自動顯示為辦公室中的動畫角色
+4. 點擊 **+ 代理** 手動生成新的 Claude Code 進程
+5. 點擊角色選取，再點擊座位重新指定位置
+6. 點擊 **佈局** 開啟辦公室編輯器自訂空間
 
-This is the only part of the project that is not freely available. The tileset is not included in this repository due to its license. To use Pixel Agents locally with the full set of office furniture and decorations, purchase the tileset and run the asset import pipeline:
+## 架構
+
+```
+web/
+  server/                     — Express + Socket.IO 伺服器 (Node.js)
+    src/
+      index.ts                — 入口：Express 靜態檔案 + Socket.IO 連線處理
+      agentManager.ts         — 代理生命週期：spawn Claude 進程、自動偵測、清理
+      fileWatcher.ts          — fs.watch + 輪詢、JSONL 增量讀取、自動收養
+      transcriptParser.ts     — JSONL 解析 → Socket.IO 訊息
+      assetLoader.ts          — PNG 解析、精靈圖轉換、家具目錄載入
+      layoutPersistence.ts    — ~/.pixel-agents/layout.json 讀寫
+      timerManager.ts         — 等待/權限計時器
+      demoMode.ts             — 演示模式：模擬代理行為序列
+      constants.ts            — 伺服器常數（計時、截斷、解析、端口）
+      types.ts                — 共享介面 (AgentState, MessageSender)
+
+  client/                     — React + TypeScript (Vite)
+    src/
+      App.tsx                 — 組合根：hooks + components + EditActionBar
+      socketApi.ts            — Socket.IO ↔ postMessage 相容層
+      i18n.ts                 — 繁體中文本地化字串
+      constants.ts            — 網格/動畫/渲染/相機/縮放/遊戲邏輯常數
+      notificationSound.ts   — Web Audio API 提示音
+      hooks/
+        useExtensionMessages.ts — Socket.IO 訊息 → officeState 同步
+        useEditorActions.ts     — 編輯器狀態 + 回呼
+        useEditorKeyboard.ts    — 快捷鍵綁定
+      components/             — React UI 元件
+      office/                 — 遊戲引擎（渲染、角色 FSM、BFS 尋路）
+```
+
+原始 VS Code 擴充套件程式碼保留於根目錄的 `src/` 和 `webview-ui/`。
+
+## 佈局編輯器
+
+內建編輯器支援：
+
+- **地板** — 7 種花紋 + HSB 色彩控制
+- **牆壁** — 自動拼接 + 色彩自訂
+- **工具** — 選取、繪製、擦除、放置、吸管、拾取
+- **撤銷/重做** — 50 層歷史 Ctrl+Z / Ctrl+Y
+- **匯出/匯入** — 透過設定面板以 JSON 格式分享佈局
+
+網格可擴展至 64×64 格。
+
+## 辦公室素材
+
+辦公室圖磚使用 **[Office Interior Tileset (16x16)](https://donarg.itch.io/officetileset)** by **Donarg**（itch.io，$2 USD）。
+
+此為專案中唯一非免費部分，圖磚未包含在倉庫中。購買後執行素材導入管線：
 
 ```bash
 npm run import-tileset
 ```
 
-Fair warning: the import pipeline is not exactly straightforward — the out-of-the-box tileset assets aren't the easiest to work with, and while I've done my best to make the process as smooth as possible, it may require some manual tweaking. If you have experience creating pixel art office assets and would like to contribute freely usable tilesets for the community, that would be hugely appreciated.
+無圖磚時仍可運作 — 會有預設角色和基礎佈局，但完整家具目錄需要導入的素材。
 
-The extension will still work without the tileset — you'll get the default characters and basic layout, but the full furniture catalog requires the imported assets.
+## 技術棧
 
-## How It Works
+- **Web 伺服器**: Node.js, Express 5, Socket.IO 4, TypeScript, pngjs
+- **Web 客戶端**: React 19, TypeScript, Vite 7, Canvas 2D, Socket.IO Client
+- **原始擴充**: TypeScript, VS Code Webview API, esbuild
 
-Pixel Agents watches Claude Code's JSONL transcript files to track what each agent is doing. When an agent uses a tool (like writing a file or running a command), the extension detects it and updates the character's animation accordingly. No modifications to Claude Code are needed — it's purely observational.
+## 致謝
 
-The webview runs a lightweight game loop with canvas rendering, BFS pathfinding, and a character state machine (idle → walk → type/read). Everything is pixel-perfect at integer zoom levels.
+本專案基於 [pablodelucca/pixel-agents](https://github.com/pablodelucca/pixel-agents)，以 MIT 授權條款釋出。感謝原作者 [Pablo De Lucca](https://github.com/pablodelucca) 的出色作品。
 
-## Tech Stack
+## 授權條款
 
-- **Extension**: TypeScript, VS Code Webview API, esbuild
-- **Webview**: React 19, TypeScript, Vite, Canvas 2D
-
-## Known Limitations
-
-- **Agent-terminal sync** — the way agents are connected to Claude Code terminal instances is not super robust and sometimes desyncs, especially when terminals are rapidly opened/closed or restored across sessions.
-- **Heuristic-based status detection** — Claude Code's JSONL transcript format does not provide clear signals for when an agent is waiting for user input or when it has finished its turn. The current detection is based on heuristics (idle timers, turn-duration events) and often misfires — agents may briefly show the wrong status or miss transitions.
-- **Windows-only testing** — the extension has only been tested on Windows 11. It may work on macOS or Linux, but there could be unexpected issues with file watching, paths, or terminal behavior on those platforms.
-
-## Roadmap
-
-There are several areas where contributions would be very welcome:
-
-- **Improve agent-terminal reliability** — more robust connection and sync between characters and Claude Code instances
-- **Better status detection** — find or propose clearer signals for agent state transitions (waiting, done, permission needed)
-- **Community assets** — freely usable pixel art tilesets or characters that anyone can use without purchasing third-party assets
-- **Agent creation and definition** — define agents with custom skills, system prompts, names, and skins before launching them
-- **Desks as directories** — click on a desk to select a working directory, drag and drop agents or click-to-assign to move them to specific desks/projects
-- **Claude Code agent teams** — native support for [agent teams](https://code.claude.com/docs/en/agent-teams), visualizing multi-agent coordination and communication
-- **Git worktree support** — agents working in different worktrees to avoid conflict from parallel work on the same files
-- **Support for other agentic frameworks** — [OpenCode](https://github.com/nichochar/opencode), or really any kind of agentic experiment you'd want to run inside a pixel art interface (see [simile.ai](https://simile.ai/) for inspiration)
-
-If any of these interest you, feel free to open an issue or submit a PR.
-
-## Contributions
-
-See [CONTRIBUTORS.md](CONTRIBUTORS.md) for instructions on how to contribute to this project.
-
-Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
-
-## Supporting the Project
-
-If you find Pixel Agents useful, consider supporting its development:
-
-<a href="https://github.com/sponsors/pablodelucca">
-  <img src="https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github" alt="GitHub Sponsors">
-</a>
-<a href="https://ko-fi.com/pablodelucca">
-  <img src="https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi" alt="Ko-fi">
-</a>
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).
+本專案以 [MIT License](LICENSE) 授權。
