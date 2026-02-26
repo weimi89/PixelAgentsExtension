@@ -91,6 +91,19 @@ export const FurnitureType = {
   CHAIR: 'chair',
   PC: 'pc',
   LAMP: 'lamp',
+  // New furniture sprites
+  LAPTOP: 'laptop',
+  PRINTER: 'printer',
+  COFFEE_MACHINE: 'coffee_machine',
+  SOFA: 'sofa',
+  FILING_CABINET: 'filing_cabinet',
+  CLOCK: 'clock',
+  PAINTING: 'painting',
+  TRASH_CAN: 'trash_can',
+  FRIDGE: 'fridge',
+  VENDING_MACHINE: 'vending_machine',
+  SERVER_RACK: 'server_rack',
+  WINDOW: 'window',
 } as const
 export type FurnitureType = (typeof FurnitureType)[keyof typeof FurnitureType]
 
@@ -177,8 +190,10 @@ export interface Character {
   isActive: boolean
   /** Assigned seat uid, or null if no seat */
   seatId: string | null
+  /** Whether this character is detached (tmux session alive but server restarted) */
+  isDetached: boolean
   /** Active speech bubble type, or null if none showing */
-  bubbleType: 'permission' | 'waiting' | null
+  bubbleType: 'permission' | 'waiting' | 'detached' | null
   /** Countdown timer for bubble (waiting: 2→0, permission: unused) */
   bubbleTimer: number
   /** Timer to stay seated while inactive after seat reassignment (counts down to 0) */

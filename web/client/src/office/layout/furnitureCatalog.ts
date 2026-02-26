@@ -9,6 +9,18 @@ import {
   CHAIR_SPRITE,
   PC_SPRITE,
   LAMP_SPRITE,
+  LAPTOP_SPRITE,
+  PRINTER_SPRITE,
+  COFFEE_MACHINE_SPRITE,
+  SOFA_SPRITE,
+  FILING_CABINET_SPRITE,
+  CLOCK_SPRITE,
+  PAINTING_SPRITE,
+  TRASH_CAN_SPRITE,
+  FRIDGE_SPRITE,
+  VENDING_MACHINE_SPRITE,
+  SERVER_RACK_SPRITE,
+  WINDOW_SPRITE,
 } from '../sprites/spriteData.js'
 
 export interface LoadedAssetData {
@@ -47,6 +59,20 @@ export const FURNITURE_CATALOG: CatalogEntryWithCategory[] = [
   { type: FurnitureType.CHAIR,      label: 'Chair',      footprintW: 1, footprintH: 1, sprite: CHAIR_SPRITE,        isDesk: false, category: 'chairs' },
   { type: FurnitureType.PC,         label: 'PC',         footprintW: 1, footprintH: 1, sprite: PC_SPRITE,           isDesk: false, category: 'electronics' },
   { type: FurnitureType.LAMP,       label: 'Lamp',       footprintW: 1, footprintH: 1, sprite: LAMP_SPRITE,         isDesk: false, category: 'decor' },
+
+  // ── New furniture sprites ──
+  { type: FurnitureType.LAPTOP,          label: '筆電',     footprintW: 1, footprintH: 1, sprite: LAPTOP_SPRITE,          isDesk: false, category: 'electronics', canPlaceOnSurfaces: true },
+  { type: FurnitureType.PRINTER,         label: '印表機',   footprintW: 1, footprintH: 1, sprite: PRINTER_SPRITE,         isDesk: false, category: 'electronics' },
+  { type: FurnitureType.COFFEE_MACHINE,  label: '咖啡機',   footprintW: 1, footprintH: 1, sprite: COFFEE_MACHINE_SPRITE,  isDesk: false, category: 'misc' },
+  { type: FurnitureType.SOFA,            label: '沙發',     footprintW: 2, footprintH: 1, sprite: SOFA_SPRITE,            isDesk: false, category: 'chairs' },
+  { type: FurnitureType.FILING_CABINET,  label: '檔案櫃',   footprintW: 1, footprintH: 1, sprite: FILING_CABINET_SPRITE,  isDesk: false, category: 'storage' },
+  { type: FurnitureType.CLOCK,           label: '時鐘',     footprintW: 1, footprintH: 1, sprite: CLOCK_SPRITE,           isDesk: false, category: 'wall', canPlaceOnWalls: true },
+  { type: FurnitureType.PAINTING,        label: '畫作',     footprintW: 1, footprintH: 1, sprite: PAINTING_SPRITE,        isDesk: false, category: 'wall', canPlaceOnWalls: true },
+  { type: FurnitureType.TRASH_CAN,       label: '垃圾桶',   footprintW: 1, footprintH: 1, sprite: TRASH_CAN_SPRITE,       isDesk: false, category: 'misc' },
+  { type: FurnitureType.FRIDGE,          label: '冰箱',     footprintW: 1, footprintH: 2, sprite: FRIDGE_SPRITE,          isDesk: false, category: 'misc' },
+  { type: FurnitureType.VENDING_MACHINE, label: '販賣機',   footprintW: 1, footprintH: 2, sprite: VENDING_MACHINE_SPRITE, isDesk: false, category: 'misc' },
+  { type: FurnitureType.SERVER_RACK,     label: '伺服器',   footprintW: 1, footprintH: 2, sprite: SERVER_RACK_SPRITE,     isDesk: false, category: 'electronics' },
+  { type: FurnitureType.WINDOW,          label: '窗戶',     footprintW: 2, footprintH: 1, sprite: WINDOW_SPRITE,          isDesk: false, category: 'wall', canPlaceOnWalls: true },
 
 ]
 
