@@ -50,4 +50,5 @@ export type ServerMessage =
   | { type: 'furnitureAssetsLoaded'; catalog: FurnitureAsset[]; sprites: Record<string, string[][]> }
   | { type: 'settingsLoaded'; soundEnabled: boolean }
   | { type: 'sessionsList'; sessions: SessionInfo[] }
+  | { type: 'agentEmote'; id: number; emote: string }
   | { type: 'exportLayoutData'; layout: OfficeLayout }

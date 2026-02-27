@@ -1347,6 +1347,55 @@ export const EMOTE_NOTE_SPRITE: SpriteData = (() => {
   ]
 })()
 
+/** 相機表情（處理圖片） */
+export const EMOTE_CAMERA_SPRITE: SpriteData = (() => {
+  const K = '#333333' // 黑色機身
+  const G = '#757575' // 灰色鏡頭
+  const L = '#B0BEC5' // 淺灰
+  const F = '#FFD700' // 閃光燈
+  return [
+    [_, _, F, _, _, _, _],
+    [_, K, K, K, K, K, _],
+    [K, K, G, G, G, K, K],
+    [K, G, L, L, L, G, K],
+    [K, G, L, L, L, G, K],
+    [K, K, G, G, G, K, K],
+    [_, K, K, K, K, K, _],
+  ]
+})()
+
+/** 眼睛表情（監督子任務） */
+export const EMOTE_EYE_SPRITE: SpriteData = (() => {
+  const W = '#FFFFFF' // 白色眼白
+  const B = '#1565C0' // 藍色瞳孔
+  const K = '#333333' // 黑色輪廓
+  return [
+    [_, _, K, K, K, _, _],
+    [_, K, W, W, W, K, _],
+    [K, W, W, B, W, W, K],
+    [K, W, B, B, B, W, K],
+    [K, W, W, B, W, W, K],
+    [_, K, W, W, W, K, _],
+    [_, _, K, K, K, _, _],
+  ]
+})()
+
+/** 漩渦表情（上下文壓縮） */
+export const EMOTE_COMPRESS_SPRITE: SpriteData = (() => {
+  const P = '#7E57C2' // 紫色
+  const L = '#B39DDB' // 淺紫
+  const D = '#4527A0' // 深紫
+  return [
+    [_, _, P, P, P, _, _],
+    [_, P, _, _, _, L, _],
+    [P, _, _, L, L, _, P],
+    [P, _, L, D, _, _, P],
+    [P, _, L, L, _, _, P],
+    [_, L, _, _, _, P, _],
+    [_, _, P, P, P, _, _],
+  ]
+})()
+
 const EMOTE_SPRITES: Record<EmoteType, SpriteData> = {
   [Emote.COFFEE]: EMOTE_COFFEE_SPRITE,
   [Emote.WATER]: EMOTE_WATER_SPRITE,
@@ -1355,6 +1404,9 @@ const EMOTE_SPRITES: Record<EmoteType, SpriteData> = {
   [Emote.IDEA]: EMOTE_IDEA_SPRITE,
   [Emote.HEART]: EMOTE_HEART_SPRITE,
   [Emote.NOTE]: EMOTE_NOTE_SPRITE,
+  [Emote.CAMERA]: EMOTE_CAMERA_SPRITE,
+  [Emote.EYE]: EMOTE_EYE_SPRITE,
+  [Emote.COMPRESS]: EMOTE_COMPRESS_SPRITE,
 }
 
 /** 取得指定表情類型的精靈圖 */

@@ -73,6 +73,12 @@ export function processTranscriptLine(
 				sender?.postMessage({ type: 'agentThinking', id: agentId, thinking: true });
 			}
 
+			// 偵測 image 區塊 → 相機表情
+			const hasImage = blocks.some(b => b.type === 'image');
+			if (hasImage) {
+				sender?.postMessage({ type: 'agentEmote', id: agentId, emote: 'camera' });
+			}
+
 			const hasToolUse = blocks.some(b => b.type === 'tool_use');
 
 			if (hasToolUse) {
@@ -155,6 +161,8 @@ export function processTranscriptLine(
 				clearAgentActivity(agent, agentId, permissionTimers, sender);
 				agent.hadToolsInTurn = false;
 			}
+		} else if (record.type === 'system' && record.subtype === 'compact_boundary') {
+			sender?.postMessage({ type: 'agentEmote', id: agentId, emote: 'compress' });
 		} else if (record.type === 'system' && record.subtype === 'turn_duration') {
 			cancelWaitingTimer(agentId, waitingTimers);
 			cancelPermissionTimer(agentId, permissionTimers);
@@ -201,6 +209,10 @@ function processProgressRecord(
 	if (!data) return;
 
 	const dataType = data.type as string | undefined;
+	if (dataType === 'waiting_for_task') {
+		sender?.postMessage({ type: 'agentEmote', id: agentId, emote: 'eye' });
+		return;
+	}
 	if (dataType === 'bash_progress' || dataType === 'mcp_progress') {
 		if (agent.activeToolIds.has(parentToolId)) {
 			startPermissionTimer(agentId, agents, permissionTimers, PERMISSION_EXEMPT_TOOLS, sender);

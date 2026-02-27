@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import type { OfficeState } from '../office/engine/officeState.js'
-import type { OfficeLayout, ToolActivity } from '../office/types.js'
+import type { OfficeLayout, ToolActivity, EmoteType } from '../office/types.js'
 import type { ServerMessage } from '../types/messages.js'
 import { extractToolName } from '../office/toolUtils.js'
 import { migrateLayoutColors } from '../office/layout/layoutSerializer.js'
@@ -325,6 +325,9 @@ export function useExtensionMessages(
         })
         os.removeSubagent(id, parentToolId)
         setSubagentCharacters((prev) => prev.filter((s) => !(s.parentAgentId === id && s.parentToolId === parentToolId)))
+      } else if (msg.type === 'agentEmote') {
+        const { id, emote } = msg
+        os.showEmote(id, emote as EmoteType)
       } else if (msg.type === 'agentThinking') {
         const { id, thinking } = msg
         os.setAgentThinking(id, thinking)

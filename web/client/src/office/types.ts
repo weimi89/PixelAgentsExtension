@@ -56,6 +56,9 @@ export const EmoteType = {
   IDEA: 'idea',
   HEART: 'heart',
   NOTE: 'note',
+  CAMERA: 'camera',
+  EYE: 'eye',
+  COMPRESS: 'compress',
 } as const
 export type EmoteType = (typeof EmoteType)[keyof typeof EmoteType]
 

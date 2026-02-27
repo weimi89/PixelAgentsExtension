@@ -1,4 +1,5 @@
 import { TILE_SIZE, MATRIX_EFFECT_DURATION, CharacterState, Direction } from '../types.js'
+import type { EmoteType } from '../types.js'
 import {
   PALETTE_COUNT,
   HUE_SHIFT_MIN_DEG,
@@ -12,6 +13,7 @@ import {
   CHARACTER_SITTING_OFFSET_PX,
   CHARACTER_HIT_HALF_WIDTH,
   CHARACTER_HIT_HEIGHT,
+  EMOTE_DISPLAY_DURATION_SEC,
 } from '../../constants.js'
 import type { Character, Seat, FurnitureInstance, TileType as TileTypeVal, OfficeLayout, PlacedFurniture } from '../types.js'
 import { createCharacter, updateCharacter, isSittingState } from './characters.js'
@@ -657,6 +659,15 @@ export class OfficeState {
     if (ch) {
       ch.isThinking = thinking
     }
+  }
+
+  /** 在指定代理角色上顯示短暫表情（伺服器觸發） */
+  showEmote(id: number, emote: EmoteType): void {
+    const ch = this.characters.get(id)
+    if (!ch) return
+    if (ch.emoteType && ch.emoteTimer > 1.0) return
+    ch.emoteType = emote
+    ch.emoteTimer = EMOTE_DISPLAY_DURATION_SEC
   }
 
   update(dt: number): void {
