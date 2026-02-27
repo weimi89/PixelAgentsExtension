@@ -18,7 +18,7 @@ import {
 } from './assetLoader.js';
 import type { LoadedAssets, LoadedFloorTiles, LoadedWallTiles, LoadedCharacterSprites } from './assetLoader.js';
 import { writeLayoutToFile, loadLayout } from './layoutPersistence.js';
-import { launchNewAgent, closeAgent, removeAgent, sendExistingAgents, getAllProjectDirs, getProjectDirPath, resumeSession, recoverTmuxAgents, checkTmuxHealth, savePersistedAgents } from './agentManager.js';
+import { closeAgent, removeAgent, sendExistingAgents, getAllProjectDirs, getProjectDirPath, resumeSession, recoverTmuxAgents, checkTmuxHealth, savePersistedAgents } from './agentManager.js';
 import { setCustomName, addExcludedProject, removeExcludedProject, readExcludedProjects } from './projectNameStore.js';
 import { scanAllSessions } from './sessionScanner.js';
 import { ensureProjectScan } from './fileWatcher.js';
@@ -363,10 +363,6 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender): void {
 				// 啟動 tmux 健康檢查
 				startTmuxHealthCheck();
 			}
-			break;
-		}
-		case 'openClaude': {
-			launchNewAgent(cwd, ctx);
 			break;
 		}
 		case 'closeAgent': {

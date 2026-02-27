@@ -4,7 +4,6 @@ import { t } from '../i18n.js'
 
 interface BottomToolbarProps {
   isEditMode: boolean
-  onOpenClaude: () => void
   onToggleEditMode: () => void
   onOpenSessionPicker: () => void
   isDebugMode: boolean
@@ -45,7 +44,6 @@ const btnActive: React.CSSProperties = {
 
 export const BottomToolbar = memo(function BottomToolbar({
   isEditMode,
-  onOpenClaude,
   onToggleEditMode,
   onOpenSessionPicker,
   isDebugMode,
@@ -56,23 +54,6 @@ export const BottomToolbar = memo(function BottomToolbar({
 
   return (
     <div role="toolbar" aria-label={t.layout} style={panelStyle}>
-      <button
-        onClick={onOpenClaude}
-        onMouseEnter={() => setHovered('agent')}
-        onMouseLeave={() => setHovered(null)}
-        style={{
-          ...btnBase,
-          padding: '5px 12px',
-          background:
-            hovered === 'agent'
-              ? 'var(--pixel-agent-hover-bg)'
-              : 'var(--pixel-agent-bg)',
-          border: '2px solid var(--pixel-agent-border)',
-          color: 'var(--pixel-agent-text)',
-        }}
-      >
-        {t.addAgent}
-      </button>
       <button
         onClick={onOpenSessionPicker}
         onMouseEnter={() => setHovered('sessions')}

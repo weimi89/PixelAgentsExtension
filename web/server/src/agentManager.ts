@@ -261,22 +261,6 @@ function spawnClaudeAgent(
 	jsonlPollTimers.set(id, pollTimer);
 }
 
-/** 啟動新的 Claude 代理會話 */
-export function launchNewAgent(
-	cwd: string,
-	ctx: AgentContext,
-): void {
-	const sessionId = crypto.randomUUID();
-	const projectDir = getProjectDirPath(cwd);
-	const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
-
-	spawnClaudeAgent(
-		['--session-id', sessionId], cwd, expectedFile,
-		`spawned claude --session-id ${sessionId}`,
-		sessionId, ctx,
-	);
-}
-
 /** 恢復既有的 Claude 會話 */
 export function resumeSession(
 	sessionId: string,

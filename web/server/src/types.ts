@@ -43,7 +43,6 @@ export interface PersistedAgent {
 /** 客戶端 → 伺服器的 Socket.IO 訊息型別 */
 export type ClientMessage =
 	| { type: 'webviewReady' }
-	| { type: 'openClaude' }
 	| { type: 'closeAgent'; id: number }
 	| { type: 'focusAgent'; id: number }
 	| { type: 'saveAgentSeats'; seats: Record<number, { palette: number; hueShift: number; seatId: string | null }> }

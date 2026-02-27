@@ -1,7 +1,6 @@
 // 集中管理的 UI 字串 — 繁體中文本地化
 export const t = {
   // 底部工具列
-  addAgent: '+ 代理',
   layout: '佈局',
   editOfficeLayout: '編輯辦公室佈局',
   settings: '設定',

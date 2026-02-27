@@ -317,7 +317,6 @@ function App() {
 
       <BottomToolbar
         isEditMode={editor.isEditMode}
-        onOpenClaude={editor.handleOpenClaude}
         onToggleEditMode={editor.handleToggleEditMode}
         onOpenSessionPicker={handleOpenSessionPicker}
         isDebugMode={isDebugMode}
