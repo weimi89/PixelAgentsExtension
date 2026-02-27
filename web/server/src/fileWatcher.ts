@@ -164,7 +164,8 @@ function scanAndAdopt(
 		sender?.postMessage({
 			type: 'agentCreated',
 			id,
-			...(isExternal ? { isExternal: true, projectName: extractProjectName(projectDir) } : {}),
+			projectName: extractProjectName(projectDir),
+			...(isExternal ? { isExternal: true } : {}),
 		});
 
 		// 立即開始監視檔案

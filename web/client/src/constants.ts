@@ -11,10 +11,10 @@ export const MAX_ROWS = 64
 export const WALK_SPEED_PX_PER_SEC = 48
 export const WALK_FRAME_DURATION_SEC = 0.15
 export const TYPE_FRAME_DURATION_SEC = 0.3
-export const WANDER_PAUSE_MIN_SEC = 2.0
-export const WANDER_PAUSE_MAX_SEC = 20.0
-export const WANDER_MOVES_BEFORE_REST_MIN = 3
-export const WANDER_MOVES_BEFORE_REST_MAX = 6
+export const WANDER_PAUSE_MIN_SEC = 3.0
+export const WANDER_PAUSE_MAX_SEC = 12.0
+export const WANDER_MOVES_BEFORE_REST_MIN = 2
+export const WANDER_MOVES_BEFORE_REST_MAX = 4
 export const SEAT_REST_MIN_SEC = 120.0
 export const SEAT_REST_MAX_SEC = 240.0
 
@@ -131,11 +131,14 @@ export const EMOTE_FADE_DURATION_SEC = 0.5
 export const SLEEP_ZZZ_REFRESH_SEC = 3.0
 
 // ── 漫遊行為權重 ────────────────────────────────────────────
-export const WANDER_WEIGHT_RANDOM = 40
-export const WANDER_WEIGHT_FURNITURE = 20
-export const WANDER_WEIGHT_CHAT = 15
-export const WANDER_WEIGHT_WALL = 15
-export const WANDER_WEIGHT_RETURN_SEAT = 10
+export const WANDER_WEIGHT_IDLE_LOOK = 30         // 站著轉方向（不移動）
+export const WANDER_WEIGHT_RANDOM = 30
+export const WANDER_WEIGHT_FURNITURE = 15
+export const WANDER_WEIGHT_CHAT = 10
+export const WANDER_WEIGHT_WALL = 10
+export const WANDER_WEIGHT_RETURN_SEAT = 5
+export const WANDER_RANDOM_RADIUS = 3             // 隨機漫遊最大格數
+export const WANDER_MAX_PATH_STEPS = 5            // 路徑最長步數（截斷）
 
 // ── 觸控 ────────────────────────────────────────────────────
 export const LONG_PRESS_DURATION_MS = 500

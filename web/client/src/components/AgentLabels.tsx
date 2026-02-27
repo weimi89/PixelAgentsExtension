@@ -2,33 +2,26 @@ import type { OfficeState } from '../office/engine/officeState.js'
 import type { SubagentCharacter } from '../hooks/useExtensionMessages.js'
 import { TILE_SIZE } from '../office/types.js'
 import { isSittingState } from '../office/engine/characters.js'
-import { t } from '../i18n.js'
 import { useRenderTick } from '../hooks/useRenderTick.js'
-import { formatModelName } from '../utils.js'
 
 interface AgentLabelsProps {
   officeState: OfficeState
   agents: number[]
   agentStatuses: Record<number, string>
-  agentModels: Record<number, string>
   containerRef: React.RefObject<HTMLDivElement | null>
   zoom: number
   panRef: React.RefObject<{ x: number; y: number }>
   subagentCharacters: SubagentCharacter[]
-  /** agentId → projectName，僅外部專案代理有條目 */
-  agentProjects: Record<number, string>
 }
 
 export function AgentLabels({
   officeState,
   agents,
   agentStatuses,
-  agentModels,
   containerRef,
   zoom,
   panRef,
   subagentCharacters,
-  agentProjects,
 }: AgentLabelsProps) {
   useRenderTick()
 
@@ -45,11 +38,8 @@ export function AgentLabels({
   const deviceOffsetX = Math.floor((canvasW - mapW) / 2) + Math.round(panRef.current.x)
   const deviceOffsetY = Math.floor((canvasH - mapH) / 2) + Math.round(panRef.current.y)
 
-  // 建立子代理標籤查找表
-  const subLabelMap = new Map<number, string>()
-  for (const sub of subagentCharacters) {
-    subLabelMap.set(sub.id, sub.label)
-  }
+  const selectedId = officeState.selectedAgentId
+  const hoveredId = officeState.hoveredAgentId
 
   // 所有需要渲染標籤的角色 ID（一般代理 + 子代理）
   const allIds = [...agents, ...subagentCharacters.map((s) => s.id)]
@@ -60,19 +50,14 @@ export function AgentLabels({
         const ch = officeState.characters.get(id)
         if (!ch) return null
 
-        // 角色位置：裝置像素 → CSS 像素（跟隨坐姿偏移）
-        const sittingOffset = isSittingState(ch.state) ? 14 : 0
-        // 當非斷線的對話氣泡顯示時隱藏標籤（讓氣泡單獨可見）
-        // 斷線氣泡是持久的 — 同時顯示標籤
+        // 當非斷線的對話氣泡顯示時隱藏（讓氣泡單獨可見）
         if (ch.bubbleType && ch.bubbleType !== 'detached') return null
-
-        const screenX = (deviceOffsetX + ch.x * zoom) / dpr
-        const screenY = (deviceOffsetY + (ch.y + sittingOffset - 46) * zoom) / dpr
+        // 懸停或選取時由 ToolOverlay 負責顯示完整資訊，此處不重複渲染
+        if (selectedId === id || hoveredId === id) return null
 
         const status = agentStatuses[id]
         const isWaiting = status === 'waiting'
         const isActive = ch.isActive
-        const isSub = ch.isSubagent
         const isDetached = ch.isDetached
 
         let dotColor: string | null = null
@@ -84,13 +69,16 @@ export function AgentLabels({
           dotColor = '#3794ff'
         }
 
-        const modelDisplay = agentModels[id] ? formatModelName(agentModels[id]) : null
-        const projectName = agentProjects[id]
-        const labelText = isDetached
-          ? t.detached
-          : projectName
-            ? projectName
-            : (subLabelMap.get(id) || (modelDisplay ? `${modelDisplay}` : t.agent(id)))
+        // 無狀態圓點 → 不渲染
+        if (!dotColor) return null
+        // 有表情顯示時隱藏圓點（表情已經傳達狀態資訊）
+        if (ch.emoteType) return null
+
+        // 精簡圓點位於角色頭頂上方（坐姿與站姿使用不同偏移）
+        const isSitting = isSittingState(ch.state)
+        const dotOffsetY = isSitting ? (14 - 42) : -34
+        const screenX = (deviceOffsetX + ch.x * zoom) / dpr
+        const screenY = (deviceOffsetY + (ch.y + dotOffsetY) * zoom) / dpr
 
         return (
           <div
@@ -105,36 +93,15 @@ export function AgentLabels({
             }}
           >
             <span
+              className={isActive && !isWaiting ? 'pixel-agents-pulse' : undefined}
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: isSub ? '16px' : '18px',
-                fontStyle: isSub ? 'italic' : undefined,
-                color: 'var(--pixel-text)',
-                background: 'rgba(30,30,46,0.7)',
-                padding: '1px 5px',
-                borderRadius: 2,
-                whiteSpace: 'nowrap',
-                maxWidth: isSub ? 120 : undefined,
-                overflow: isSub ? 'hidden' : undefined,
-                textOverflow: isSub ? 'ellipsis' : undefined,
+                display: 'block',
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: dotColor,
               }}
-            >
-              {dotColor && (
-                <span
-                  className={isActive && !isWaiting ? 'pixel-agents-pulse' : undefined}
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: dotColor,
-                    flexShrink: 0,
-                  }}
-                />
-              )}
-              {labelText}
-            </span>
+            />
           </div>
         )
       })}

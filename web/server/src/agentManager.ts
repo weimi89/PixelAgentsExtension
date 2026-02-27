@@ -5,7 +5,7 @@ import { spawn, execSync } from 'child_process';
 import type { AgentContext, AgentState, PersistedAgent, MessageSender } from './types.js';
 import { cancelWaitingTimer, cancelPermissionTimer } from './timerManager.js';
 import { startFileWatching, readNewLines } from './fileWatcher.js';
-import { JSONL_POLL_INTERVAL_MS, LAYOUT_FILE_DIR, AGENTS_FILE_NAME } from './constants.js';
+import { JSONL_POLL_INTERVAL_MS, LAYOUT_FILE_DIR, AGENTS_FILE_NAME, IGNORED_PROJECT_DIR_PATTERNS } from './constants.js';
 import {
 	isTmuxAvailable,
 	tmuxSessionName as buildTmuxName,
@@ -38,13 +38,14 @@ export function getProjectDirPath(cwd: string): string {
 	return path.join(os.homedir(), '.claude', 'projects', dirName);
 }
 
-/** 取得所有 Claude 專案目錄清單 */
+/** 取得所有 Claude 專案目錄清單（排除 observer-sessions 等忽略模式） */
 export function getAllProjectDirs(): string[] {
 	const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
 	try {
 		const entries = fs.readdirSync(projectsRoot, { withFileTypes: true });
 		return entries
 			.filter(e => e.isDirectory())
+			.filter(e => !IGNORED_PROJECT_DIR_PATTERNS.some(p => e.name.includes(p)))
 			.map(e => path.join(projectsRoot, e.name));
 	} catch {
 		return [];
@@ -218,7 +219,8 @@ function spawnClaudeAgent(
 	sender?.postMessage({
 		type: 'agentCreated',
 		id,
-		...(isExternal ? { isExternal: true, projectName: extractProjectName(projectDir) } : {}),
+		projectName: extractProjectName(projectDir),
+		...(isExternal ? { isExternal: true } : {}),
 	});
 
 	// 輪詢等待 JSONL 檔案出現後開始檔案監視
@@ -395,7 +397,8 @@ export function recoverTmuxAgents(
 		sender?.postMessage({
 			type: 'agentCreated',
 			id,
-			...(isExternal ? { isExternal: true, projectName: extractProjectName(projectDir) } : {}),
+			projectName: extractProjectName(projectDir),
+			...(isExternal ? { isExternal: true } : {}),
 		});
 
 		// 啟動檔案監視
@@ -445,18 +448,18 @@ export function sendExistingAgents(
 	}
 	agentIds.sort((a, b) => a - b);
 
-	// 為每個代理補充外部專案資訊
+	// 為每個代理補充專案資訊
 	const enrichedMeta: Record<string, { palette?: number; hueShift?: number; seatId?: string; isExternal?: boolean; projectName?: string }> = {};
 	for (const [idStr, meta] of Object.entries(agentMeta)) {
 		enrichedMeta[idStr] = { ...meta };
 	}
 	for (const [id, agent] of agents) {
+		const key = String(id);
+		if (!enrichedMeta[key]) enrichedMeta[key] = {};
+		enrichedMeta[key].projectName = extractProjectName(agent.projectDir);
 		const isExternal = agent.projectDir !== ownProjectDir;
 		if (isExternal) {
-			const key = String(id);
-			if (!enrichedMeta[key]) enrichedMeta[key] = {};
 			enrichedMeta[key].isExternal = true;
-			enrichedMeta[key].projectName = extractProjectName(agent.projectDir);
 		}
 	}
 

@@ -356,12 +356,10 @@ function App() {
         officeState={officeState}
         agents={agents}
         agentStatuses={agentStatuses}
-        agentModels={agentModels}
         containerRef={containerRef}
         zoom={editor.zoom}
         panRef={editor.panRef}
         subagentCharacters={subagentCharacters}
-        agentProjects={agentProjects}
       />
 
       <ToolOverlay
@@ -374,6 +372,7 @@ function App() {
         zoom={editor.zoom}
         panRef={editor.panRef}
         onCloseAgent={handleCloseAgent}
+        agentProjects={agentProjects}
       />
 
       {isDebugMode && (

@@ -106,10 +106,10 @@ export function useExtensionMessages(
           saveAgentSeats(os)
         }
       } else if (msg.type === 'agentCreated') {
-        const { id, isExternal, projectName } = msg
+        const { id, projectName } = msg
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]))
         setSelectedAgent(id)
-        if (isExternal && projectName) {
+        if (projectName) {
           setAgentProjects((prev) => ({ ...prev, [id]: projectName }))
         }
         os.addAgent(id)
@@ -157,7 +157,7 @@ export function useExtensionMessages(
         const newProjects: Record<number, string> = {}
         for (const id of incoming) {
           const m = meta[id]
-          if (m?.isExternal && m.projectName) {
+          if (m?.projectName) {
             newProjects[id] = m.projectName
           }
           if (layoutReadyRef.current) {

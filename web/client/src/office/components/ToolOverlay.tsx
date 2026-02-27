@@ -18,6 +18,8 @@ interface ToolOverlayProps {
   zoom: number
   panRef: React.RefObject<{ x: number; y: number }>
   onCloseAgent: (id: number) => void
+  /** agentId → projectName，僅外部專案代理有條目 */
+  agentProjects: Record<number, string>
 }
 
 /** 從工具/狀態衍生出簡短的人類可讀活動字串 */
@@ -54,6 +56,7 @@ export function ToolOverlay({
   zoom,
   panRef,
   onCloseAgent,
+  agentProjects,
 }: ToolOverlayProps) {
   useRenderTick()
 
@@ -110,8 +113,10 @@ export function ToolOverlay({
           activityText = getActivityText(id, agentTools, ch.isActive)
         }
 
-        // 取得模型顯示名稱
+        // 取得模型顯示名稱與代理標籤
         const modelName = !isSub && agentModels[id] ? formatModelName(agentModels[id]) : null
+        const projectName = !isSub ? agentProjects[id] : undefined
+        const agentLabel = projectName || (modelName ? `${modelName}` : t.agent(id))
 
         // 決定圓點顏色
         const tools = agentTools[id]
@@ -146,8 +151,7 @@ export function ToolOverlay({
             <div
               style={{
                 display: 'flex',
-                alignItems: 'center',
-                gap: 5,
+                flexDirection: 'column',
                 background: 'var(--pixel-bg)',
                 border: isSelected
                   ? '2px solid var(--pixel-border-light)'
@@ -159,69 +163,72 @@ export function ToolOverlay({
                 maxWidth: 220,
               }}
             >
-              {dotColor && (
+              {/* 第一行：代理名稱 + 關閉按鈕 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                {dotColor && (
+                  <span
+                    className={isActive && !hasPermission ? 'pixel-agents-pulse' : undefined}
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: dotColor,
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
                 <span
-                  className={isActive && !hasPermission ? 'pixel-agents-pulse' : undefined}
                   style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: dotColor,
-                    flexShrink: 0,
+                    fontSize: isSub ? '16px' : '18px',
+                    fontStyle: isSub ? 'italic' : undefined,
+                    color: 'var(--pixel-text)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                   }}
-                />
-              )}
+                >
+                  {isSub ? (subagentCharacters.find((s) => s.id === id)?.label || t.subtask) : agentLabel}
+                </span>
+                {isSelected && !isSub && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onCloseAgent(id)
+                    }}
+                    title={t.closeAgent}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--pixel-close-text)',
+                      cursor: 'pointer',
+                      padding: '0 2px',
+                      fontSize: '26px',
+                      lineHeight: 1,
+                      marginLeft: 'auto',
+                      flexShrink: 0,
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.color = 'var(--pixel-close-hover)'
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.color = 'var(--pixel-close-text)'
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              {/* 第二行：活動狀態 */}
               <span
                 style={{
-                  fontSize: isSub ? '20px' : '22px',
-                  fontStyle: isSub ? 'italic' : undefined,
-                  color: 'var(--pixel-text)',
+                  fontSize: isSub ? '16px' : '18px',
+                  color: 'var(--pixel-text-dim)',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
+                  marginLeft: dotColor ? 10 : 0,
                 }}
               >
                 {activityText}
               </span>
-              {modelName && (
-                <span
-                  style={{
-                    fontSize: '16px',
-                    color: 'var(--pixel-text-dim)',
-                    flexShrink: 0,
-                    marginLeft: 2,
-                  }}
-                >
-                  {modelName}
-                </span>
-              )}
-              {isSelected && !isSub && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onCloseAgent(id)
-                  }}
-                  title={t.closeAgent}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--pixel-close-text)',
-                    cursor: 'pointer',
-                    padding: '0 2px',
-                    fontSize: '26px',
-                    lineHeight: 1,
-                    marginLeft: 2,
-                    flexShrink: 0,
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.color = 'var(--pixel-close-hover)'
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.color = 'var(--pixel-close-text)'
-                  }}
-                >
-                  ×
-                </button>
-              )}
             </div>
           </div>
         )

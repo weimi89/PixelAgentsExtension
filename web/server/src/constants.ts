@@ -34,6 +34,8 @@ export const AGENT_SEATS_FILE_NAME = 'agent-seats.json';
 // ── 自動偵測 ──────────────────────────────────────────
 export const ACTIVE_JSONL_MAX_AGE_MS = 30_000; // 30 秒 — 在此時間窗口內被修改的檔案視為「活躍」
 export const STALE_AGENT_TIMEOUT_MS = 600_000; // 10 分鐘 — 超過此時間無 JSONL 更新才視為過期（容忍 extended thinking）
+/** 掃描時忽略的專案目錄名稱模式（例如 claude-mem observer sessions） */
+export const IGNORED_PROJECT_DIR_PATTERNS = ['observer-sessions'];
 
 // ── 工作階段掃描 ──────────────────────────────────────
 export const SESSION_TITLE_MAX_LENGTH = 80;

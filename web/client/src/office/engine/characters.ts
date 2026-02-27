@@ -25,11 +25,13 @@ import {
   STRETCH_TRIGGER_SIT_SEC,
   EMOTE_DISPLAY_DURATION_SEC,
   SLEEP_ZZZ_REFRESH_SEC,
+  WANDER_WEIGHT_IDLE_LOOK,
   WANDER_WEIGHT_RANDOM,
   WANDER_WEIGHT_FURNITURE,
   WANDER_WEIGHT_CHAT,
   WANDER_WEIGHT_WALL,
-  WANDER_WEIGHT_RETURN_SEAT,
+  WANDER_RANDOM_RADIUS,
+  WANDER_MAX_PATH_STEPS,
 } from '../../constants.js'
 
 /** 顯示閱讀動畫而非打字動畫的工具 */
@@ -154,23 +156,34 @@ function manhattan(c1: number, r1: number, c2: number, r2: number): number {
   return Math.abs(c1 - c2) + Math.abs(r1 - r2)
 }
 
+/** 截斷路徑至最大步數 */
+function truncatePath(path: Array<{ col: number; row: number }>): Array<{ col: number; row: number }> {
+  if (path.length <= WANDER_MAX_PATH_STEPS) return path
+  return path.slice(0, WANDER_MAX_PATH_STEPS)
+}
+
+type WanderActionType = 'idle_look' | 'random' | 'furniture' | 'chat' | 'wall'
+
 /** 加權隨機漫遊目標選擇 */
 function pickWanderAction(
   ch: Character,
   ctx: UpdateContext,
-): { type: 'random' | 'furniture' | 'chat' | 'wall' | 'return_seat'; target?: { col: number; row: number }; furnitureType?: string; chatTarget?: number } {
-  const weights: Array<{ type: 'random' | 'furniture' | 'chat' | 'wall' | 'return_seat'; weight: number; target?: { col: number; row: number }; furnitureType?: string; chatTarget?: number }> = []
+): { type: WanderActionType; target?: { col: number; row: number }; furnitureType?: string; chatTarget?: number } {
+  const weights: Array<{ type: WanderActionType; weight: number; target?: { col: number; row: number }; furnitureType?: string; chatTarget?: number }> = []
+
+  // 站著看看（只轉方向，不移動）
+  weights.push({ type: 'idle_look', weight: WANDER_WEIGHT_IDLE_LOOK })
 
   // 隨機漫遊
   weights.push({ type: 'random', weight: WANDER_WEIGHT_RANDOM })
 
-  // 互動家具
+  // 互動家具（限制在 8 格範圍內）
   let closestFurniture: { col: number; row: number; type: string } | null = null
   let closestFurnitureDist = Infinity
   for (const [, f] of ctx.furnitureMap) {
     if (!INTERACTABLE_FURNITURE.has(f.type)) continue
     const d = manhattan(ch.tileCol, ch.tileRow, f.col, f.row)
-    if (d < closestFurnitureDist) {
+    if (d <= 8 && d < closestFurnitureDist) {
       closestFurnitureDist = d
       closestFurniture = f
     }
@@ -197,13 +210,13 @@ function pickWanderAction(
     weights.push({ type: 'chat', weight: WANDER_WEIGHT_CHAT, target: { col: closestChat.col, row: closestChat.row }, chatTarget: closestChat.id })
   }
 
-  // 白板
+  // 白板（限制在 8 格範圍內）
   let closestWall: { col: number; row: number; type: string } | null = null
   let closestWallDist = Infinity
   for (const [, f] of ctx.furnitureMap) {
     if (!WALL_INTERACTABLE_FURNITURE.has(f.type)) continue
     const d = manhattan(ch.tileCol, ch.tileRow, f.col, f.row)
-    if (d < closestWallDist) {
+    if (d <= 8 && d < closestWallDist) {
       closestWallDist = d
       closestWall = f
     }
@@ -212,12 +225,7 @@ function pickWanderAction(
     weights.push({ type: 'wall', weight: WANDER_WEIGHT_WALL, target: { col: closestWall.col, row: closestWall.row }, furnitureType: closestWall.type })
   }
 
-  // 返回座位
-  if (ch.wanderCount >= ch.wanderLimit && ch.seatId) {
-    weights.push({ type: 'return_seat', weight: WANDER_WEIGHT_RETURN_SEAT })
-  }
-
-  // 加權隨機選擇
+  // 加權隨機選擇（return_seat 已在 IDLE 狀態中確定性處理）
   const total = weights.reduce((sum, w) => sum + w.weight, 0)
   let r = Math.random() * total
   for (const w of weights) {
@@ -394,87 +402,145 @@ export function updateCharacter(
       // 漫遊計時器倒數
       ch.wanderTimer -= dt
       if (ch.wanderTimer <= 0) {
-        const action = pickWanderAction(ch, ctx)
-
-        if (action.type === 'return_seat' && ch.seatId) {
-          const seat = ctx.seats.get(ch.seatId)
-          if (seat) {
-            const path = findPath(ch.tileCol, ch.tileRow, seat.seatCol, seat.seatRow, ctx.tileMap, ctx.blockedTiles)
-            if (path.length > 0) {
-              ch.path = path
-              ch.moveProgress = 0
-              ch.state = CharacterState.WALK
-              ch.frame = 0
-              ch.frameTimer = 0
-              break
+        // 漫遊夠了 → 回座休息
+        if (ch.wanderCount >= ch.wanderLimit) {
+          if (ch.seatId) {
+            const seat = ctx.seats.get(ch.seatId)
+            if (seat) {
+              // 已經在座位上 → 直接坐下休息
+              if (ch.tileCol === seat.seatCol && ch.tileRow === seat.seatRow) {
+                ch.state = CharacterState.TYPE
+                ch.dir = seat.facingDir
+                ch.seatTimer = randomRange(SEAT_REST_MIN_SEC, SEAT_REST_MAX_SEC)
+                ch.wanderCount = 0
+                ch.wanderLimit = randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX)
+                ch.frame = 0
+                ch.frameTimer = 0
+                break
+              }
+              // 不在座位上 → 走回去
+              const path = findPath(ch.tileCol, ch.tileRow, seat.seatCol, seat.seatRow, ctx.tileMap, ctx.blockedTiles)
+              if (path.length > 0) {
+                ch.path = path
+                ch.moveProgress = 0
+                ch.state = CharacterState.WALK
+                ch.frame = 0
+                ch.frameTimer = 0
+                break
+              }
             }
           }
+          // 沒有座位或找不到路徑 → 原地站立休息一段時間再重新漫遊
+          ch.wanderCount = 0
+          ch.wanderLimit = randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX)
+          ch.wanderTimer = randomRange(SEAT_REST_MIN_SEC * 0.5, SEAT_REST_MAX_SEC * 0.5)
+          break
+        }
+
+        // 加權選擇漫遊動作
+        const action = pickWanderAction(ch, ctx)
+        let acted = false
+
+        if (action.type === 'idle_look') {
+          // 站著轉方向 — 隨機看向一個方向
+          const dirs = [Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT]
+          ch.dir = dirs[Math.floor(Math.random() * dirs.length)]
+          acted = true
         } else if (action.type === 'furniture' && action.target) {
           const adj = findAdjacentWalkable(action.target.col, action.target.row, ctx.tileMap, ctx.blockedTiles)
           if (adj) {
-            const path = findPath(ch.tileCol, ch.tileRow, adj.col, adj.row, ctx.tileMap, ctx.blockedTiles)
-            if (path.length > 0) {
-              ch.path = path
+            const rawPath = findPath(ch.tileCol, ch.tileRow, adj.col, adj.row, ctx.tileMap, ctx.blockedTiles)
+            if (rawPath.length > 0) {
+              ch.path = truncatePath(rawPath)
               ch.moveProgress = 0
               ch.state = CharacterState.WALK
               ch.frame = 0
               ch.frameTimer = 0
-              ch.interactTarget = action.target
+              // 僅在路徑未截斷時設定互動目標
+              if (rawPath.length <= WANDER_MAX_PATH_STEPS) {
+                ch.interactTarget = action.target
+              }
               ch.wanderCount++
-              break
+              acted = true
             }
           }
         } else if (action.type === 'chat' && action.target && action.chatTarget !== undefined) {
-          // 如果夠近則直接聊天，否則走過去
           if (manhattan(ch.tileCol, ch.tileRow, action.target.col, action.target.row) <= CHAT_PROXIMITY_TILES) {
             const other = ctx.allCharacters.get(action.chatTarget)
             if (other && other.state === CharacterState.IDLE && other.chatPartnerId === null) {
               startChat(ch, other)
-              break
+              acted = true
             }
           } else {
-            const path = findPath(ch.tileCol, ch.tileRow, action.target.col, action.target.row, ctx.tileMap, ctx.blockedTiles)
-            if (path.length > 0) {
-              ch.path = path
+            const rawPath = findPath(ch.tileCol, ch.tileRow, action.target.col, action.target.row, ctx.tileMap, ctx.blockedTiles)
+            if (rawPath.length > 0) {
+              ch.path = truncatePath(rawPath)
               ch.moveProgress = 0
               ch.state = CharacterState.WALK
               ch.frame = 0
               ch.frameTimer = 0
               ch.wanderCount++
-              break
+              acted = true
             }
           }
         } else if (action.type === 'wall' && action.target) {
           const adj = findAdjacentWalkable(action.target.col, action.target.row, ctx.tileMap, ctx.blockedTiles)
           if (adj) {
-            const path = findPath(ch.tileCol, ch.tileRow, adj.col, adj.row, ctx.tileMap, ctx.blockedTiles)
-            if (path.length > 0) {
-              ch.path = path
+            const rawPath = findPath(ch.tileCol, ch.tileRow, adj.col, adj.row, ctx.tileMap, ctx.blockedTiles)
+            if (rawPath.length > 0) {
+              ch.path = truncatePath(rawPath)
               ch.moveProgress = 0
               ch.state = CharacterState.WALK
               ch.frame = 0
               ch.frameTimer = 0
-              ch.interactTarget = action.target
+              // 僅在路徑未截斷時設定互動目標
+              if (rawPath.length <= WANDER_MAX_PATH_STEPS) {
+                ch.interactTarget = action.target
+              }
               ch.wanderCount++
-              break
+              acted = true
             }
           }
         } else {
-          // 隨機漫遊
-          if (ctx.walkableTiles.length > 0) {
-            const target = ctx.walkableTiles[Math.floor(Math.random() * ctx.walkableTiles.length)]
-            const path = findPath(ch.tileCol, ch.tileRow, target.col, target.row, ctx.tileMap, ctx.blockedTiles)
-            if (path.length > 0) {
-              ch.path = path
+          // 隨機漫遊 — 限制在附近幾格，優先走近處
+          const nearby = ctx.walkableTiles.filter(
+            (t) => manhattan(ch.tileCol, ch.tileRow, t.col, t.row) <= WANDER_RANDOM_RADIUS &&
+              (t.col !== ch.tileCol || t.row !== ch.tileRow),
+          )
+          if (nearby.length > 0) {
+            // 加權偏好近處目標（距離 1 權重 3, 距離 2 權重 2, 距離 3 權重 1）
+            const weighted: Array<{ tile: { col: number; row: number }; w: number }> = nearby.map(t => {
+              const d = manhattan(ch.tileCol, ch.tileRow, t.col, t.row)
+              return { tile: t, w: WANDER_RANDOM_RADIUS + 1 - d }
+            })
+            const totalW = weighted.reduce((s, e) => s + e.w, 0)
+            let pick = Math.random() * totalW
+            let target = weighted[0].tile
+            for (const e of weighted) {
+              pick -= e.w
+              if (pick <= 0) { target = e.tile; break }
+            }
+            const rawPath = findPath(ch.tileCol, ch.tileRow, target.col, target.row, ctx.tileMap, ctx.blockedTiles)
+            if (rawPath.length > 0) {
+              ch.path = truncatePath(rawPath)
               ch.moveProgress = 0
               ch.state = CharacterState.WALK
               ch.frame = 0
               ch.frameTimer = 0
               ch.wanderCount++
+              acted = true
             }
           }
         }
-        ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC)
+        // 無論是否成功行動，都重設漫遊計時器
+        if (action.type === 'idle_look') {
+          // 站著看看後短暫停頓
+          ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC * 0.5, WANDER_PAUSE_MIN_SEC * 1.5)
+        } else {
+          ch.wanderTimer = acted
+            ? randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC)
+            : randomRange(WANDER_PAUSE_MAX_SEC * 0.5, WANDER_PAUSE_MAX_SEC)
+        }
       }
       break
     }
