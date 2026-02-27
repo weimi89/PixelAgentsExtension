@@ -51,7 +51,8 @@ export type ClientMessage =
 	| { type: 'setSoundEnabled'; enabled: boolean }
 	| { type: 'listSessions' }
 	| { type: 'resumeSession'; sessionId: string; projectDir: string }
-	| { type: 'requestExportLayout' };
+	| { type: 'requestExportLayout' }
+	| { type: 'setProjectName'; agentId: number; name: string };
 
 /** 代理上下文 — 集中管理所有共享狀態與計時器，避免函式傳遞大量參數 */
 export interface AgentContext {

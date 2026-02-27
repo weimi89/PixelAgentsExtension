@@ -388,6 +388,10 @@ function handleAgentTranscript(msg: ServerMessage & { type: 'agentTranscript' },
   ctx.setAgentTranscripts((prev) => ({ ...prev, [id]: log }))
 }
 
+function handleProjectNameUpdated(msg: ServerMessage & { type: 'projectNameUpdated' }, ctx: HandlerContext): void {
+  ctx.setAgentProjects((prev) => ({ ...prev, ...msg.updates }))
+}
+
 // ── Handler 查找表 ──────────────────────────────────────────────
 
 type HandlerFn = (msg: never, ctx: HandlerContext) => void
@@ -418,6 +422,7 @@ const messageHandlers: Record<string, HandlerFn> = {
   settingsLoaded: handleSettingsLoaded as HandlerFn,
   furnitureAssetsLoaded: handleFurnitureAssetsLoaded as HandlerFn,
   agentTranscript: handleAgentTranscript as HandlerFn,
+  projectNameUpdated: handleProjectNameUpdated as HandlerFn,
 }
 
 // ── Hook ────────────────────────────────────────────────────────

@@ -53,3 +53,4 @@ export type ServerMessage =
   | { type: 'agentEmote'; id: number; emote: string }
   | { type: 'agentTranscript'; id: number; log: TranscriptEntry[] }
   | { type: 'exportLayoutData'; layout: OfficeLayout }
+  | { type: 'projectNameUpdated'; updates: Record<number, string> }

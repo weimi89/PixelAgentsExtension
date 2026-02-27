@@ -1,3 +1,4 @@
+import { useState, useRef, useCallback } from 'react'
 import type { ToolActivity } from '../types.js'
 import type { OfficeState } from '../engine/officeState.js'
 import type { SubagentCharacter, TranscriptEntry } from '../../hooks/useExtensionMessages.js'
@@ -8,6 +9,7 @@ import { TOOL_OVERLAY_VERTICAL_OFFSET, CHARACTER_SITTING_OFFSET_PX, TOOL_TYPE_CO
 import { t } from '../../i18n.js'
 import { useRenderTick } from '../../hooks/useRenderTick.js'
 import { formatModelName } from '../../utils.js'
+import { vscode } from '../../socketApi.js'
 
 interface ToolOverlayProps {
   officeState: OfficeState
@@ -110,6 +112,17 @@ export function ToolOverlay({
   agentTranscripts,
 }: ToolOverlayProps) {
   useRenderTick()
+
+  const [editingAgentId, setEditingAgentId] = useState<number | null>(null)
+  const editInputRef = useRef<HTMLInputElement>(null)
+
+  const commitRename = useCallback((id: number, newName: string) => {
+    const trimmed = newName.trim()
+    if (trimmed) {
+      vscode.postMessage({ type: 'setProjectName', agentId: id, name: trimmed })
+    }
+    setEditingAgentId(null)
+  }, [])
 
   const el = containerRef.current
   if (!el) return null
@@ -227,17 +240,51 @@ export function ToolOverlay({
                     }}
                   />
                 )}
-                <span
-                  style={{
-                    fontSize: isSub ? '16px' : '18px',
-                    fontStyle: isSub ? 'italic' : undefined,
-                    color: 'var(--pixel-text)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {isSub ? (subagentCharacters.find((s) => s.id === id)?.label || t.subtask) : agentLabel}
-                </span>
+                {!isSub && editingAgentId === id ? (
+                  <input
+                    ref={editInputRef}
+                    defaultValue={agentLabel}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        commitRename(id, (e.target as HTMLInputElement).value)
+                      } else if (e.key === 'Escape') {
+                        setEditingAgentId(null)
+                      }
+                      e.stopPropagation()
+                    }}
+                    onBlur={(e) => commitRename(id, e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      fontSize: '18px',
+                      color: 'var(--pixel-text)',
+                      background: 'transparent',
+                      border: 'none',
+                      borderBottom: '1px solid var(--pixel-accent)',
+                      outline: 'none',
+                      padding: 0,
+                      fontFamily: 'inherit',
+                      width: 120,
+                    }}
+                  />
+                ) : (
+                  <span
+                    style={{
+                      fontSize: isSub ? '16px' : '18px',
+                      fontStyle: isSub ? 'italic' : undefined,
+                      color: 'var(--pixel-text)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      cursor: !isSub && isSelected ? 'text' : undefined,
+                    }}
+                    onDoubleClick={!isSub ? (e) => {
+                      e.stopPropagation()
+                      setEditingAgentId(id)
+                    } : undefined}
+                  >
+                    {isSub ? (subagentCharacters.find((s) => s.id === id)?.label || t.subtask) : agentLabel}
+                  </span>
+                )}
                 {isSelected && !isSub && (
                   <button
                     onClick={(e) => {

@@ -6,6 +6,7 @@ import type { AgentContext, AgentState, PersistedAgent, MessageSender } from './
 import { cancelWaitingTimer, cancelPermissionTimer } from './timerManager.js';
 import { startFileWatching, readNewLines } from './fileWatcher.js';
 import { JSONL_POLL_INTERVAL_MS, JSONL_POLL_TIMEOUT_MS, LAYOUT_FILE_DIR, AGENTS_FILE_NAME, IGNORED_PROJECT_DIR_PATTERNS } from './constants.js';
+import { getCustomName } from './projectNameStore.js';
 import {
 	isTmuxAvailable,
 	tmuxSessionName as buildTmuxName,
@@ -25,8 +26,10 @@ const CLAUDE_BIN = (() => {
 	}
 })();
 
-/** 從專案目錄名稱提取可讀的專案名稱（取最後一段非空片段） */
+/** 從專案目錄名稱提取可讀的專案名稱（優先使用自訂名稱，回退至最後一段非空片段） */
 export function extractProjectName(projectDir: string): string {
+	const custom = getCustomName(projectDir);
+	if (custom) return custom;
 	const dirName = path.basename(projectDir);
 	const parts = dirName.split(/-+/).filter(Boolean);
 	return parts[parts.length - 1] || dirName;

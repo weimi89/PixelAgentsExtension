@@ -19,6 +19,7 @@ import {
 import type { LoadedAssets, LoadedFloorTiles, LoadedWallTiles, LoadedCharacterSprites } from './assetLoader.js';
 import { writeLayoutToFile, loadLayout } from './layoutPersistence.js';
 import { launchNewAgent, closeAgent, sendExistingAgents, getAllProjectDirs, getProjectDirPath, resumeSession, recoverTmuxAgents, checkTmuxHealth, savePersistedAgents } from './agentManager.js';
+import { setCustomName } from './projectNameStore.js';
 import { scanAllSessions } from './sessionScanner.js';
 import { ensureProjectScan } from './fileWatcher.js';
 import {
@@ -399,6 +400,22 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender): void {
 		case 'requestExportLayout': {
 			const layout = loadLayout(defaultLayout);
 			sender.postMessage({ type: 'exportLayoutData', layout });
+			break;
+		}
+		case 'setProjectName': {
+			const agent = agents.get(msg.agentId);
+			if (!agent) break;
+			const projectDir = agent.projectDir;
+			setCustomName(projectDir, msg.name);
+			// 找出所有同 projectDir 的代理，一起更新名稱
+			const updates: Record<number, string> = {};
+			for (const [id, a] of agents) {
+				if (a.projectDir === projectDir) {
+					updates[id] = msg.name;
+				}
+			}
+			// 廣播給所有客戶端
+			ctx.sender?.postMessage({ type: 'projectNameUpdated', updates });
 			break;
 		}
 	}
