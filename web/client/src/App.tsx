@@ -192,6 +192,24 @@ function App() {
     vscode.postMessage({ type: 'focusAgent', id: focusId })
   }, [])
 
+  // Space 鍵關閉選取代理的氣泡（非編輯模式）
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (editor.isEditMode) return
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return
+      if (e.key === ' ') {
+        e.preventDefault()
+        const os = getOfficeState()
+        const selId = os.selectedAgentId
+        if (selId != null) {
+          os.dismissBubble(selId)
+        }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [editor.isEditMode])
+
   const officeState = getOfficeState()
 
   // 強制依賴 editorTickForKeyboard 以傳播鍵盤觸發的重新渲染

@@ -780,6 +780,10 @@ export function updateCharacter(
     }
 
     case CharacterState.THINK: {
+      // 持續顯示思考表情 — 表情過期時自動重新觸發
+      if (!ch.emoteType) {
+        setEmote(ch, EmoteType.IDEA, EMOTE_DISPLAY_DURATION_SEC)
+      }
       // 思考踱步
       if (ch.frameTimer >= WALK_FRAME_DURATION_SEC) {
         ch.frameTimer -= WALK_FRAME_DURATION_SEC
@@ -821,10 +825,6 @@ export function updateCharacter(
           : [...ch.thinkPath].reverse().slice(1)
         ch.path = next
         ch.moveProgress = 0
-        // 定期刷新表情
-        if (!ch.emoteType) {
-          setEmote(ch, EmoteType.IDEA, EMOTE_DISPLAY_DURATION_SEC)
-        }
       }
 
       if (ch.path.length > 0) {

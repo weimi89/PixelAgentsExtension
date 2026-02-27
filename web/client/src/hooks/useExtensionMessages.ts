@@ -11,6 +11,14 @@ import { setCharacterTemplates } from '../office/sprites/spriteData.js'
 import { vscode, onServerMessage } from '../socketApi.js'
 import { playDoneSound, setSoundEnabled } from '../notificationSound.js'
 
+/** 從 Record<number, T> 中移除指定鍵，若鍵不存在則回傳原始物件（避免不必要的重渲染） */
+function removeKey<T>(prev: Record<number, T>, id: number): Record<number, T> {
+  if (!(id in prev)) return prev
+  const next = { ...prev }
+  delete next[id]
+  return next
+}
+
 export interface SubagentCharacter {
   id: number
   parentAgentId: number
@@ -118,36 +126,11 @@ export function useExtensionMessages(
         const { id } = msg
         setAgents((prev) => prev.filter((a) => a !== id))
         setSelectedAgent((prev) => (prev === id ? null : prev))
-        setAgentTools((prev) => {
-          if (!(id in prev)) return prev
-          const next = { ...prev }
-          delete next[id]
-          return next
-        })
-        setAgentStatuses((prev) => {
-          if (!(id in prev)) return prev
-          const next = { ...prev }
-          delete next[id]
-          return next
-        })
-        setAgentModels((prev) => {
-          if (!(id in prev)) return prev
-          const next = { ...prev }
-          delete next[id]
-          return next
-        })
-        setAgentProjects((prev) => {
-          if (!(id in prev)) return prev
-          const next = { ...prev }
-          delete next[id]
-          return next
-        })
-        setSubagentTools((prev) => {
-          if (!(id in prev)) return prev
-          const next = { ...prev }
-          delete next[id]
-          return next
-        })
+        setAgentTools((prev) => removeKey(prev, id))
+        setAgentStatuses((prev) => removeKey(prev, id))
+        setAgentModels((prev) => removeKey(prev, id))
+        setAgentProjects((prev) => removeKey(prev, id))
+        setSubagentTools((prev) => removeKey(prev, id))
         os.removeAllSubagents(id)
         setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id))
         os.removeAgent(id)
@@ -187,7 +170,7 @@ export function useExtensionMessages(
         setAgentTools((prev) => {
           const list = prev[id] || []
           if (list.some((t) => t.toolId === toolId)) return prev
-          return { ...prev, [id]: [...list, { toolId, status, done: false }] }
+          return { ...prev, [id]: [...list, { toolId, status, done: false, startTime: Date.now() }] }
         })
         const toolName = extractToolName(status)
         os.setAgentTool(id, toolName)
@@ -208,23 +191,13 @@ export function useExtensionMessages(
           if (!list) return prev
           return {
             ...prev,
-            [id]: list.map((t) => (t.toolId === toolId ? { ...t, done: true } : t)),
+            [id]: list.map((t) => (t.toolId === toolId ? { ...t, done: true, endTime: Date.now() } : t)),
           }
         })
       } else if (msg.type === 'agentToolsClear') {
         const { id } = msg
-        setAgentTools((prev) => {
-          if (!(id in prev)) return prev
-          const next = { ...prev }
-          delete next[id]
-          return next
-        })
-        setSubagentTools((prev) => {
-          if (!(id in prev)) return prev
-          const next = { ...prev }
-          delete next[id]
-          return next
-        })
+        setAgentTools((prev) => removeKey(prev, id))
+        setSubagentTools((prev) => removeKey(prev, id))
         os.removeAllSubagents(id)
         setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id))
         os.setAgentTool(id, null)
@@ -235,12 +208,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentStatus') {
         const { id, status } = msg
         setAgentStatuses((prev) => {
-          if (status === 'active') {
-            if (!(id in prev)) return prev
-            const next = { ...prev }
-            delete next[id]
-            return next
-          }
+          if (status === 'active') return removeKey(prev, id)
           return { ...prev, [id]: status }
         })
         os.setAgentActive(id, status === 'active')
@@ -289,7 +257,7 @@ export function useExtensionMessages(
           const agentSubs = prev[id] || {}
           const list = agentSubs[parentToolId] || []
           if (list.some((t) => t.toolId === toolId)) return prev
-          return { ...prev, [id]: { ...agentSubs, [parentToolId]: [...list, { toolId, status, done: false }] } }
+          return { ...prev, [id]: { ...agentSubs, [parentToolId]: [...list, { toolId, status, done: false, startTime: Date.now() }] } }
         })
         const subId = os.getSubagentId(id, parentToolId)
         if (subId !== null) {
@@ -306,7 +274,7 @@ export function useExtensionMessages(
           if (!list) return prev
           return {
             ...prev,
-            [id]: { ...agentSubs, [parentToolId]: list.map((t) => (t.toolId === toolId ? { ...t, done: true } : t)) },
+            [id]: { ...agentSubs, [parentToolId]: list.map((t) => (t.toolId === toolId ? { ...t, done: true, endTime: Date.now() } : t)) },
           }
         })
       } else if (msg.type === 'subagentClear') {

@@ -22,6 +22,14 @@ interface ToolOverlayProps {
   agentProjects: Record<number, string>
 }
 
+/** 格式化秒數為人類可讀字串 */
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return s > 0 ? `${m}m${s}s` : `${m}m`
+}
+
 /** 從工具/狀態衍生出簡短的人類可讀活動字串 */
 function getActivityText(
   agentId: number,
@@ -34,16 +42,34 @@ function getActivityText(
     const activeTool = [...tools].reverse().find((t) => !t.done)
     if (activeTool) {
       if (activeTool.permissionWait) return t.needsApproval
-      return activeTool.status
+      const elapsed = Math.floor((Date.now() - activeTool.startTime) / 1000)
+      return elapsed > 0 ? `${activeTool.status} (${formatElapsed(elapsed)})` : activeTool.status
     }
     // 所有工具已完成但代理仍活躍（回合中）— 繼續顯示最後的工具狀態
     if (isActive) {
       const lastTool = tools[tools.length - 1]
-      if (lastTool) return lastTool.status
+      if (lastTool) {
+        if (lastTool.endTime) {
+          const dur = Math.floor((lastTool.endTime - lastTool.startTime) / 1000)
+          return dur > 0 ? `${lastTool.status} (${formatElapsed(dur)})` : lastTool.status
+        }
+        return lastTool.status
+      }
     }
   }
 
   return t.idle
+}
+
+/** 取得最近完成的工具歷史（最多 3 個） */
+function getRecentHistory(agentId: number, agentTools: Record<number, ToolActivity[]>): Array<{ status: string; duration: string }> {
+  const tools = agentTools[agentId]
+  if (!tools) return []
+  const done = tools.filter((t) => t.done && t.endTime)
+  return done.slice(-3).reverse().map((t) => {
+    const dur = Math.floor((t.endTime! - t.startTime) / 1000)
+    return { status: t.status, duration: dur > 0 ? formatElapsed(dur) : '<1s' }
+  })
 }
 
 export function ToolOverlay({
@@ -112,6 +138,9 @@ export function ToolOverlay({
         } else {
           activityText = getActivityText(id, agentTools, ch.isActive)
         }
+
+        // 取得最近完成的工具歷史（僅選取時顯示）
+        const history = isSelected && !isSub ? getRecentHistory(id, agentTools) : []
 
         // 取得模型顯示名稱與代理標籤
         const modelName = !isSub && agentModels[id] ? formatModelName(agentModels[id]) : null
@@ -229,6 +258,27 @@ export function ToolOverlay({
               >
                 {activityText}
               </span>
+              {/* 工具歷史（僅選取時） */}
+              {history.length > 0 && (
+                <div style={{ borderTop: '1px solid var(--pixel-border)', marginTop: 2, paddingTop: 2 }}>
+                  {history.map((h, i) => (
+                    <span
+                      key={i}
+                      style={{
+                        display: 'block',
+                        fontSize: '16px',
+                        color: 'var(--pixel-text-dim)',
+                        opacity: 0.7,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        marginLeft: dotColor ? 10 : 0,
+                      }}
+                    >
+                      {h.status} ({h.duration})
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )
