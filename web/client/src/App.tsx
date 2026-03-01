@@ -163,14 +163,28 @@ function App() {
     setIsSessionPickerOpen(false)
     setIsBuildingViewOpen(false)
     setIsDashboardView(false)
-  }, [])
+    if (editor.isEditMode) editor.handleToggleEditMode()
+  }, [editor.isEditMode, editor.handleToggleEditMode])
+
+  // 進入佈局編輯時，只關閉其他面板（不遞迴觸發 edit mode toggle）
+  const handleToggleEditModeExclusive = useCallback(() => {
+    if (!editor.isEditMode) {
+      setIsSettingsOpen(false)
+      setIsSessionPickerOpen(false)
+      setIsBuildingViewOpen(false)
+      setIsDashboardView(false)
+    }
+    editor.handleToggleEditMode()
+  }, [editor.isEditMode, editor.handleToggleEditMode])
 
   const handleToggleBuildingView = useCallback(() => {
-    setIsBuildingViewOpen((prev) => {
-      if (!prev) closeAllPanels()
-      return !prev
-    })
-  }, [closeAllPanels])
+    if (isBuildingViewOpen) {
+      setIsBuildingViewOpen(false)
+    } else {
+      closeAllPanels()
+      setIsBuildingViewOpen(true)
+    }
+  }, [isBuildingViewOpen, closeAllPanels])
 
   const handleSwitchFloor = useCallback((floorId: string) => {
     vscode.postMessage({ type: 'switchFloor', floorId })
@@ -185,11 +199,13 @@ function App() {
   }, [closeAllPanels])
 
   const handleToggleSettings = useCallback(() => {
-    setIsSettingsOpen((prev) => {
-      if (!prev) closeAllPanels()
-      return !prev
-    })
-  }, [closeAllPanels])
+    if (isSettingsOpen) {
+      setIsSettingsOpen(false)
+    } else {
+      closeAllPanels()
+      setIsSettingsOpen(true)
+    }
+  }, [isSettingsOpen, closeAllPanels])
 
   const handleResumeSession = useCallback((sessionId: string, projectDir: string) => {
     vscode.postMessage({ type: 'resumeSession', sessionId, projectDir })
@@ -237,15 +253,17 @@ function App() {
     editor.handleUndo,
     editor.handleRedo,
     useCallback(() => setEditorTickForKeyboard((n) => n + 1), []),
-    editor.handleToggleEditMode,
+    handleToggleEditModeExclusive,
   )
 
   const handleToggleDashboardView = useCallback(() => {
-    setIsDashboardView((prev) => {
-      if (!prev) closeAllPanels()
-      return !prev
-    })
-  }, [closeAllPanels])
+    if (isDashboardView) {
+      setIsDashboardView(false)
+    } else {
+      closeAllPanels()
+      setIsDashboardView(true)
+    }
+  }, [isDashboardView, closeAllPanels])
   const handleUiScaleChange = useCallback((scale: number) => {
     setUiScale(scale)
     vscode.postMessage({ type: 'setUiScale', scale })
@@ -429,7 +447,7 @@ function App() {
 
       <BottomToolbar
         isEditMode={editor.isEditMode}
-        onToggleEditMode={editor.handleToggleEditMode}
+        onToggleEditMode={handleToggleEditModeExclusive}
         onOpenSessionPicker={handleOpenSessionPicker}
         isDebugMode={isDebugMode}
         onToggleDebugMode={handleToggleDebugMode}
