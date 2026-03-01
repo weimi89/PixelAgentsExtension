@@ -24,6 +24,8 @@ interface BottomToolbarProps {
   uiScale: number
   onUiScaleChange: (scale: number) => void
   lanPeers: Array<{ name: string; host: string; port: number; agentCount: number }>
+  isSettingsOpen: boolean
+  onToggleSettings: () => void
 }
 
 const panelStyle: React.CSSProperties = {
@@ -78,9 +80,10 @@ export const BottomToolbar = memo(function BottomToolbar({
   uiScale,
   onUiScaleChange,
   lanPeers,
+  isSettingsOpen,
+  onToggleSettings,
 }: BottomToolbarProps) {
   const [hovered, setHovered] = useState<string | null>(null)
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
   return (
     <div role="toolbar" aria-label={t.layout} style={panelStyle}>
@@ -149,7 +152,7 @@ export const BottomToolbar = memo(function BottomToolbar({
       </button>
       <div style={{ position: 'relative' }}>
         <button
-          onClick={() => setIsSettingsOpen((v) => !v)}
+          onClick={onToggleSettings}
           onMouseEnter={() => setHovered('settings')}
           onMouseLeave={() => setHovered(null)}
           aria-pressed={isSettingsOpen}
@@ -167,7 +170,7 @@ export const BottomToolbar = memo(function BottomToolbar({
         </button>
         <SettingsModal
           isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
+          onClose={onToggleSettings}
           isDebugMode={isDebugMode}
           onToggleDebugMode={onToggleDebugMode}
           dayNightEnabled={dayNightEnabled}

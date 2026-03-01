@@ -140,6 +140,7 @@ function App() {
   const [isBuildingViewOpen, setIsBuildingViewOpen] = useState(false)
   const [dayNightEnabled, setDayNightEnabled] = useState(true)
   const [dayNightTimeOverride, setDayNightTimeOverride] = useState<number | null>(null)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isSessionPickerOpen, setIsSessionPickerOpen] = useState(false)
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [isLoadingSessions, setIsLoadingSessions] = useState(false)
@@ -155,18 +156,40 @@ function App() {
   }, [])
 
   const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), [])
-  const handleToggleBuildingView = useCallback(() => setIsBuildingViewOpen((prev) => !prev), [])
+
+  // 關閉所有底部工具列面板（互斥：同時只能開一個）
+  const closeAllPanels = useCallback(() => {
+    setIsSettingsOpen(false)
+    setIsSessionPickerOpen(false)
+    setIsBuildingViewOpen(false)
+    setIsDashboardView(false)
+  }, [])
+
+  const handleToggleBuildingView = useCallback(() => {
+    setIsBuildingViewOpen((prev) => {
+      if (!prev) closeAllPanels()
+      return !prev
+    })
+  }, [closeAllPanels])
 
   const handleSwitchFloor = useCallback((floorId: string) => {
     vscode.postMessage({ type: 'switchFloor', floorId })
   }, [])
 
   const handleOpenSessionPicker = useCallback(() => {
+    closeAllPanels()
     setIsSessionPickerOpen(true)
     setIsLoadingSessions(true)
     vscode.postMessage({ type: 'listSessions' })
     vscode.postMessage({ type: 'listProjectDirs' })
-  }, [])
+  }, [closeAllPanels])
+
+  const handleToggleSettings = useCallback(() => {
+    setIsSettingsOpen((prev) => {
+      if (!prev) closeAllPanels()
+      return !prev
+    })
+  }, [closeAllPanels])
 
   const handleResumeSession = useCallback((sessionId: string, projectDir: string) => {
     vscode.postMessage({ type: 'resumeSession', sessionId, projectDir })
@@ -217,7 +240,12 @@ function App() {
     editor.handleToggleEditMode,
   )
 
-  const handleToggleDashboardView = useCallback(() => setIsDashboardView((v) => !v), [])
+  const handleToggleDashboardView = useCallback(() => {
+    setIsDashboardView((prev) => {
+      if (!prev) closeAllPanels()
+      return !prev
+    })
+  }, [closeAllPanels])
   const handleUiScaleChange = useCallback((scale: number) => {
     setUiScale(scale)
     vscode.postMessage({ type: 'setUiScale', scale })
@@ -419,6 +447,8 @@ function App() {
         uiScale={uiScale}
         onUiScaleChange={handleUiScaleChange}
         lanPeers={lanPeers}
+        isSettingsOpen={isSettingsOpen}
+        onToggleSettings={handleToggleSettings}
       />
 
       <SessionPicker
