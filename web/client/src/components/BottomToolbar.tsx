@@ -19,6 +19,11 @@ interface BottomToolbarProps {
   onToggleDayNight: () => void
   dayNightTimeOverride: number | null
   onDayNightTimeOverrideChange: (hour: number | null) => void
+  isDashboardView: boolean
+  onToggleDashboardView: () => void
+  uiScale: number
+  onUiScaleChange: (scale: number) => void
+  lanPeers: Array<{ name: string; host: string; port: number; agentCount: number }>
 }
 
 const panelStyle: React.CSSProperties = {
@@ -68,6 +73,11 @@ export const BottomToolbar = memo(function BottomToolbar({
   onToggleDayNight,
   dayNightTimeOverride,
   onDayNightTimeOverrideChange,
+  isDashboardView,
+  onToggleDashboardView,
+  uiScale,
+  onUiScaleChange,
+  lanPeers,
 }: BottomToolbarProps) {
   const [hovered, setHovered] = useState<string | null>(null)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -90,6 +100,23 @@ export const BottomToolbar = memo(function BottomToolbar({
         title={t.buildingPanel}
       >
         {t.building}
+      </button>
+      <button
+        onClick={onToggleDashboardView}
+        onMouseEnter={() => setHovered('dashboard')}
+        onMouseLeave={() => setHovered(null)}
+        aria-pressed={isDashboardView}
+        style={
+          isDashboardView
+            ? { ...btnActive }
+            : {
+                ...btnBase,
+                background: hovered === 'dashboard' ? 'var(--pixel-btn-hover-bg)' : btnBase.background,
+              }
+        }
+        title={t.dashboard}
+      >
+        {isDashboardView ? t.officeView : t.dashboard}
       </button>
       <button
         onClick={onOpenSessionPicker}
@@ -147,6 +174,9 @@ export const BottomToolbar = memo(function BottomToolbar({
           onToggleDayNight={onToggleDayNight}
           dayNightTimeOverride={dayNightTimeOverride}
           onDayNightTimeOverrideChange={onDayNightTimeOverrideChange}
+          uiScale={uiScale}
+          onUiScaleChange={onUiScaleChange}
+          lanPeers={lanPeers}
         />
       </div>
       {!isBuildingViewOpen && (

@@ -546,6 +546,14 @@ export class OfficeState {
     if (ch) ch.isRemote = remote
   }
 
+  setAgentTeam(id: number, teamName: string | null, teamColor: string | null): void {
+    const ch = this.characters.get(id)
+    if (ch) {
+      ch.teamName = teamName
+      ch.teamColor = teamColor
+    }
+  }
+
   setAgentDetached(id: number, detached: boolean): void {
     const ch = this.characters.get(id)
     if (ch) {

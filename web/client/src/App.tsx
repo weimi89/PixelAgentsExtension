@@ -17,6 +17,11 @@ import { AgentLabels } from './components/AgentLabels.js'
 import { SessionPicker } from './components/SessionPicker.js'
 import { BuildingView } from './components/BuildingView.js'
 import { ChatPanel } from './components/ChatPanel.js'
+import { AgentDetailPanel } from './components/AgentDetailPanel.js'
+import { ContextMenu } from './components/ContextMenu.js'
+import type { ContextMenuAction } from './components/ContextMenu.js'
+import { TerminalPanel } from './components/TerminalPanel.js'
+import { Dashboard } from './pages/Dashboard.js'
 import type { SessionInfo } from './components/SessionPicker.js'
 import type { ServerMessage } from './types/messages.js'
 import { t } from './i18n.js'
@@ -127,8 +132,10 @@ function App() {
 
   const isEditDirty = useCallback(() => editor.isEditMode && editor.isDirty, [editor.isEditMode, editor.isDirty])
 
-  const { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, projectDirs, currentFloorId, building, floorSummaries, chatMessages } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
+  const handleUiScaleLoaded = useCallback((scale: number) => setUiScale(scale), [])
+  const { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, projectDirs, currentFloorId, building, floorSummaries, chatMessages, agentGitBranches, agentStatusHistory, agentTeams, agentCliTypes, lanPeers } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty, editor.handleZoomChange, handleUiScaleLoaded)
 
+  const [uiScale, setUiScale] = useState(1)
   const [isDebugMode, setIsDebugMode] = useState(false)
   const [isBuildingViewOpen, setIsBuildingViewOpen] = useState(false)
   const [dayNightEnabled, setDayNightEnabled] = useState(true)
@@ -137,6 +144,11 @@ function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [isLoadingSessions, setIsLoadingSessions] = useState(false)
   const [connected, setConnected] = useState(isConnected)
+  const [contextMenu, setContextMenu] = useState<{ agentId: number; x: number; y: number } | null>(null)
+  const [isDashboardView, setIsDashboardView] = useState(false)
+  const [detailPanelAgentId, setDetailPanelAgentId] = useState<number | null>(null)
+  const [terminalTabs, setTerminalTabs] = useState<Array<{ agentId: number; label: string }>>([])
+  const [activeTerminalTabId, setActiveTerminalTabId] = useState<number | null>(null)
 
   useEffect(() => {
     return onConnectionChange(setConnected)
@@ -205,11 +217,52 @@ function App() {
     editor.handleToggleEditMode,
   )
 
+  const handleToggleDashboardView = useCallback(() => setIsDashboardView((v) => !v), [])
+  const handleUiScaleChange = useCallback((scale: number) => {
+    setUiScale(scale)
+    vscode.postMessage({ type: 'setUiScale', scale })
+  }, [])
   const handleToggleDayNight = useCallback(() => setDayNightEnabled((v) => !v), [])
   const handleDayNightTimeOverrideChange = useCallback((h: number | null) => setDayNightTimeOverride(h), [])
 
   const handleCloseAgent = useCallback((id: number) => {
     vscode.postMessage({ type: 'closeAgent', id })
+  }, [])
+
+  const handleCloseDetailPanel = useCallback(() => {
+    setDetailPanelAgentId(null)
+  }, [])
+
+  const handleOpenTerminal = useCallback((agentId: number) => {
+    const label = agentProjects[agentId] || t.agent(agentId)
+    setTerminalTabs((prev) => {
+      if (prev.some((tab) => tab.agentId === agentId)) return prev
+      return [...prev, { agentId, label }]
+    })
+    setActiveTerminalTabId(agentId)
+  }, [agentProjects])
+
+  const handleCloseTerminalTab = useCallback((agentId: number) => {
+    setTerminalTabs((prev) => prev.filter((tab) => tab.agentId !== agentId))
+    setActiveTerminalTabId((prev) => {
+      if (prev !== agentId) return prev
+      // 切換到下一個分頁或 null
+      const remaining = terminalTabs.filter((tab) => tab.agentId !== agentId)
+      return remaining.length > 0 ? remaining[remaining.length - 1].agentId : null
+    })
+  }, [terminalTabs])
+
+  const handleCloseTerminalPanel = useCallback(() => {
+    setTerminalTabs([])
+    setActiveTerminalTabId(null)
+  }, [])
+
+  const handleContextMenu = useCallback((agentId: number, x: number, y: number) => {
+    setContextMenu({ agentId, x, y })
+  }, [])
+
+  const handleCloseContextMenu = useCallback(() => {
+    setContextMenu(null)
   }, [])
 
   const handleClick = useCallback((agentId: number) => {
@@ -218,6 +271,8 @@ function App() {
     const meta = os.subagentMeta.get(agentId)
     const focusId = meta ? meta.parentAgentId : agentId
     vscode.postMessage({ type: 'focusAgent', id: focusId })
+    // 切換代理詳情面板（點擊同一代理則關閉，不同代理則切換）
+    setDetailPanelAgentId((prev) => prev === focusId ? null : focusId)
   }, [])
 
   // Space 鍵關閉選取代理的氣泡（非編輯模式）
@@ -264,7 +319,10 @@ function App() {
   }
 
   return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
+    <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', '--pixel-ui-scale': uiScale } as React.CSSProperties}>
+      {isDashboardView ? (
+        <Dashboard />
+      ) : (
       <div style={{
         opacity: layoutReady ? 1 : 0,
         transition: 'opacity 0.2s ease-in-out',
@@ -288,10 +346,12 @@ function App() {
           panRef={editor.panRef}
           dayNightEnabled={dayNightEnabled}
           dayNightTimeOverride={dayNightTimeOverride}
+          onContextMenu={handleContextMenu}
         />
       </div>
+      )}
 
-      <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
+      {!isDashboardView && <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />}
 
       {/* 斷線指示器 */}
       {!connected && (
@@ -327,15 +387,17 @@ function App() {
       )}
 
       {/* 暈影覆蓋層 */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'var(--pixel-vignette)',
-          pointerEvents: 'none',
-          zIndex: 40,
-        }}
-      />
+      {!isDashboardView && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'var(--pixel-vignette)',
+            pointerEvents: 'none',
+            zIndex: 40,
+          }}
+        />
+      )}
 
       <BottomToolbar
         isEditMode={editor.isEditMode}
@@ -352,6 +414,11 @@ function App() {
         onToggleDayNight={handleToggleDayNight}
         dayNightTimeOverride={dayNightTimeOverride}
         onDayNightTimeOverrideChange={handleDayNightTimeOverrideChange}
+        isDashboardView={isDashboardView}
+        onToggleDashboardView={handleToggleDashboardView}
+        uiScale={uiScale}
+        onUiScaleChange={handleUiScaleChange}
+        lanPeers={lanPeers}
       />
 
       <SessionPicker
@@ -376,11 +443,35 @@ function App() {
 
       <ChatPanel messages={chatMessages} />
 
-      {editor.isEditMode && editor.isDirty && (
+      {!isDashboardView && detailPanelAgentId != null && agents.includes(detailPanelAgentId) && (() => {
+        // 組合代理資訊供面板使用
+        const agentInfoMap: Record<number, { projectName?: string; isRemote?: boolean; owner?: string }> = {}
+        for (const id of agents) {
+          agentInfoMap[id] = {
+            projectName: agentProjects[id],
+            isRemote: !!remoteAgents[id],
+            owner: remoteAgents[id]?.owner,
+          }
+        }
+        return (
+          <AgentDetailPanel
+            agentId={detailPanelAgentId}
+            agents={agentInfoMap}
+            agentStatuses={agentStatuses}
+            agentTools={agentTools}
+            agentModels={agentModels}
+            agentGitBranches={agentGitBranches}
+            agentStatusHistory={agentStatusHistory}
+            onClose={handleCloseDetailPanel}
+          />
+        )
+      })()}
+
+      {!isDashboardView && editor.isEditMode && editor.isDirty && (
         <EditActionBar editor={editor} editorState={editorState} />
       )}
 
-      {showRotateHint && (
+      {!isDashboardView && showRotateHint && (
         <div
           style={{
             position: 'absolute',
@@ -403,12 +494,15 @@ function App() {
         </div>
       )}
 
-      {editor.isEditMode && (() => {
-        // 從當前佈局計算所選家具的顏色
+      {!isDashboardView && editor.isEditMode && (() => {
+        // 從當前佈局計算所選家具的顏色和文字
         const selUid = editorState.selectedFurnitureUid
-        const selColor = selUid
-          ? officeState.getLayout().furniture.find((f) => f.uid === selUid)?.color ?? null
+        const selItem = selUid
+          ? officeState.getLayout().furniture.find((f) => f.uid === selUid)
           : null
+        const selColor = selItem?.color ?? null
+        const selText = selItem?.text ?? null
+        const selIsPixelText = selItem?.text !== undefined
         return (
           <EditorToolbar
             activeTool={editorState.activeTool}
@@ -416,6 +510,8 @@ function App() {
             selectedFurnitureType={editorState.selectedFurnitureType}
             selectedFurnitureUid={selUid}
             selectedFurnitureColor={selColor}
+            selectedFurnitureText={selText}
+            selectedFurnitureIsPixelText={selIsPixelText}
             floorColor={editorState.floorColor}
             wallColor={editorState.wallColor}
             onToolChange={editor.handleToolChange}
@@ -423,38 +519,46 @@ function App() {
             onFloorColorChange={editor.handleFloorColorChange}
             onWallColorChange={editor.handleWallColorChange}
             onSelectedFurnitureColorChange={editor.handleSelectedFurnitureColorChange}
+            onSelectedFurnitureTextChange={editor.handleSelectedFurnitureTextChange}
             onFurnitureTypeChange={editor.handleFurnitureTypeChange}
             loadedAssets={loadedAssets}
           />
         )
       })()}
 
-      <AgentLabels
-        officeState={officeState}
-        agents={agents}
-        agentStatuses={agentStatuses}
-        containerRef={containerRef}
-        zoom={editor.zoom}
-        panRef={editor.panRef}
-        subagentCharacters={subagentCharacters}
-      />
+      {!isDashboardView && (
+        <AgentLabels
+          officeState={officeState}
+          agents={agents}
+          agentStatuses={agentStatuses}
+          containerRef={containerRef}
+          zoom={editor.zoom}
+          panRef={editor.panRef}
+          subagentCharacters={subagentCharacters}
+        />
+      )}
 
-      <ToolOverlay
-        officeState={officeState}
-        agents={agents}
-        agentTools={agentTools}
-        agentModels={agentModels}
-        subagentCharacters={subagentCharacters}
-        containerRef={containerRef}
-        zoom={editor.zoom}
-        panRef={editor.panRef}
-        onCloseAgent={handleCloseAgent}
-        agentProjects={agentProjects}
-        remoteAgents={remoteAgents}
-        agentTranscripts={agentTranscripts}
-      />
+      {!isDashboardView && (
+        <ToolOverlay
+          officeState={officeState}
+          agents={agents}
+          agentTools={agentTools}
+          agentModels={agentModels}
+          subagentCharacters={subagentCharacters}
+          containerRef={containerRef}
+          zoom={editor.zoom}
+          panRef={editor.panRef}
+          onCloseAgent={handleCloseAgent}
+          agentProjects={agentProjects}
+          remoteAgents={remoteAgents}
+          agentTranscripts={agentTranscripts}
+          agentGitBranches={agentGitBranches}
+          agentTeams={agentTeams}
+          agentCliTypes={agentCliTypes}
+        />
+      )}
 
-      {isDebugMode && (
+      {!isDashboardView && isDebugMode && (
         <DebugView
           agents={agents}
           selectedAgent={selectedAgent}
@@ -464,6 +568,71 @@ function App() {
           onSelectAgent={handleSelectAgent}
         />
       )}
+
+      {!isDashboardView && terminalTabs.length > 0 && (
+        <TerminalPanel
+          tabs={terminalTabs}
+          activeTabId={activeTerminalTabId}
+          onSelectTab={setActiveTerminalTabId}
+          onCloseTab={handleCloseTerminalTab}
+          onClosePanel={handleCloseTerminalPanel}
+        />
+      )}
+
+      {!isDashboardView && contextMenu && (() => {
+        const os = getOfficeState()
+        const ch = os.characters.get(contextMenu.agentId)
+        if (!ch) return null
+        const isSubagent = ch.isSubagent
+        const isRemote = !!remoteAgents[contextMenu.agentId]
+        const meta = os.subagentMeta.get(contextMenu.agentId)
+        const actions: ContextMenuAction[] = []
+        if (isSubagent && meta) {
+          actions.push({ label: t.contextFocusParent, onClick: () => {
+            os.selectedAgentId = meta.parentAgentId
+            os.cameraFollowId = meta.parentAgentId
+          }})
+        } else {
+          actions.push({ label: t.contextGoToSeat, onClick: () => {
+            os.sendToSeat(contextMenu.agentId)
+          }})
+          actions.push({ label: t.contextFollowCamera, onClick: () => {
+            os.selectedAgentId = contextMenu.agentId
+            os.cameraFollowId = contextMenu.agentId
+          }})
+          if (building && building.floors.length > 1) {
+            actions.push({ label: t.contextMoveFloor, onClick: () => {
+              const targetFloor = building.floors.find((f) => f.id !== currentFloorId)
+              if (targetFloor) {
+                vscode.postMessage({ type: 'moveAgentToFloor', agentId: contextMenu.agentId, targetFloorId: targetFloor.id })
+              }
+            }})
+          }
+          actions.push({ label: t.setTeam, onClick: () => {
+            const current = agentTeams[contextMenu.agentId] || ''
+            const name = prompt(t.teamName, current)
+            if (name !== null) {
+              vscode.postMessage({ type: 'setAgentTeam', agentId: contextMenu.agentId, teamName: name || null })
+            }
+          }})
+          if (!isRemote) {
+            actions.push({ label: t.openTerminal, onClick: () => {
+              handleOpenTerminal(contextMenu.agentId)
+            }})
+            actions.push({ label: t.closeAgent, onClick: () => {
+              handleCloseAgent(contextMenu.agentId)
+            }})
+          }
+        }
+        return (
+          <ContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            actions={actions}
+            onClose={handleCloseContextMenu}
+          />
+        )
+      })()}
     </div>
   )
 }

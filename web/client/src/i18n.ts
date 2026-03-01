@@ -8,16 +8,29 @@ export const t = {
   // 縮放控制
   zoomIn: '放大 (Ctrl+滾輪)',
   zoomOut: '縮小 (Ctrl+滾輪)',
+  zoomLevel: (n: number) => `${n}x`,
 
   // 設定面板
   exportLayout: '匯出佈局',
   importLayout: '匯入佈局',
   soundNotifications: '音效通知',
+  soundWaiting: '等待提示音',
+  soundPermission: '權限請求音',
+  soundTurnComplete: '回合完成音',
   debugView: '除錯檢視',
 
   // 代理
   agent: (id: number) => `代理 #${id}`,
   closeAgent: '關閉代理',
+
+  // Git 分支
+  gitBranch: '分支',
+
+  // 右鍵選單
+  contextGoToSeat: '回到座位',
+  contextFollowCamera: '鏡頭追蹤',
+  contextMoveFloor: '移動到其他樓層',
+  contextFocusParent: '聚焦父代理',
 
   // 狀態
   needsApproval: '需要核准',
@@ -147,6 +160,7 @@ export const t = {
 
   // 儀表板
   dashboard: '儀表板',
+  officeView: '辦公室',
   openDashboard: '在新分頁開啟儀表板',
   totalAgents: '總代理數',
   activeAgents: '活躍代理',
@@ -163,4 +177,54 @@ export const t = {
   remote: '遠端',
   noAgentsYet: '尚無代理',
   noToolData: '尚無工具資料',
+
+  // 狀態歷史
+  statusHistory: '狀態歷史',
+
+  // 代理詳情面板
+  agentDetail: '代理詳情',
+  agentDetailInfo: '基本資訊',
+  agentDetailTools: '工具活動',
+  agentDetailHistory: '狀態歷史',
+  agentDetailClose: '關閉面板',
+  noHistory: '尚無歷史記錄',
+
+  // UI 縮放
+  uiScale: 'UI 縮放',
+
+  // 像素文字
+  pixelText: '像素文字',
+  pixelTextPlaceholder: '輸入文字...',
+  pixelTextLabel: '文字',
+  // 團隊
+  team: '團隊',
+  setTeam: '設定團隊',
+  noTeam: '無團隊',
+  teamName: '團隊名稱',
+
+  // CLI 類型
+  cliType: 'CLI 類型',
+  cliClaude: 'Claude',
+  cliCodex: 'Codex',
+  cliGemini: 'Gemini',
+
+  // 區網發現
+  lanDiscovery: '區網發現',
+  lanDiscoveryEnabled: '啟用區網發現',
+  lanPeerName: '顯示名稱',
+  lanPeers: '區網同伴',
+  lanNoPeers: '尚未發現其他實例',
+  lanAgentCount: '個代理',
+
+  // 終端
+  terminal: '終端',
+  openTerminal: '開啟終端',
+  terminalCloseTab: '關閉此分頁',
+  terminalClosePanel: '關閉終端面板',
+  terminalSelectTab: '選擇一個分頁',
+  terminalError: '終端錯誤',
+  terminalConnectionError: '終端連線失敗',
+  terminalDisconnected: '終端已斷線',
+  terminalExited: '終端已結束',
+  terminalNoTmux: '此代理沒有 tmux 工作階段',
 } as const

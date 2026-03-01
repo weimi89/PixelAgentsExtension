@@ -4,7 +4,7 @@ import type { EditorState } from '../office/editor/editorState.js'
 import { EditTool } from '../office/types.js'
 import { TileType } from '../office/types.js'
 import type { OfficeLayout, EditTool as EditToolType, TileType as TileTypeVal, FloorColor, PlacedFurniture } from '../office/types.js'
-import { paintTile, placeFurniture, removeFurniture, moveFurniture, rotateFurniture, toggleFurnitureState, canPlaceFurniture, getWallPlacementRow, expandLayout } from '../office/editor/editorActions.js'
+import { paintTile, placeFurniture, removeFurniture, moveFurniture, rotateFurniture, toggleFurnitureState, updateFurnitureText, canPlaceFurniture, getWallPlacementRow, expandLayout } from '../office/editor/editorActions.js'
 import type { ExpandDirection } from '../office/editor/editorActions.js'
 import { getCatalogEntry, getRotatedType, getToggledType } from '../office/layout/furnitureCatalog.js'
 import { defaultZoom } from '../office/toolUtils.js'
@@ -25,6 +25,7 @@ export interface EditorActions {
   handleFloorColorChange: (color: FloorColor) => void
   handleWallColorChange: (color: FloorColor) => void
   handleSelectedFurnitureColorChange: (color: FloorColor | null) => void
+  handleSelectedFurnitureTextChange: (text: string) => void
   handleFurnitureTypeChange: (type: string) => void // FurnitureType 列舉或素材 ID
   handleDeleteSelected: () => void
   handleRotateSelected: () => void
@@ -197,6 +198,27 @@ export function useEditorActions(
     setEditorTick((n) => n + 1)
   }, [getOfficeState, editorState, saveLayout])
 
+  const handleSelectedFurnitureTextChange = useCallback((text: string) => {
+    const uid = editorState.selectedFurnitureUid
+    if (!uid) return
+    const os = getOfficeState()
+    const layout = os.getLayout()
+
+    // 每次選取只推入一次復原記錄
+    if (colorEditUidRef.current !== uid) {
+      editorState.pushUndo(layout)
+      editorState.clearRedo()
+      colorEditUidRef.current = uid
+    }
+
+    const newLayout = updateFurnitureText(layout, uid, text)
+    editorState.isDirty = true
+    setIsDirty(true)
+    os.rebuildFromLayout(newLayout)
+    saveLayout(newLayout)
+    setEditorTick((n) => n + 1)
+  }, [getOfficeState, editorState, saveLayout])
+
   const handleFurnitureTypeChange = useCallback((type: string) => {
     // 點擊相同物件會取消選取（無幽靈預覽），維持在家具模式
     if (editorState.selectedFurnitureType === type) {
@@ -315,7 +337,9 @@ export function useEditorActions(
   }, [])
 
   const handleZoomChange = useCallback((newZoom: number) => {
-    setZoom(Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newZoom)))
+    const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newZoom))
+    setZoom(clamped)
+    vscode.postMessage({ type: 'setZoom', zoom: clamped })
   }, [])
 
   const handleDragMove = useCallback((uid: string, newCol: number, newRow: number) => {
@@ -431,6 +455,11 @@ export function useEditorActions(
         if (!canPlaceFurniture(layout, type, col, placementRow)) return
         const uid = `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
         const placed: PlacedFurniture = { uid, type, col, row: placementRow }
+        // 像素文字家具設定預設文字
+        const catEntry = getCatalogEntry(type)
+        if (catEntry?.isPixelText) {
+          placed.text = 'TEXT'
+        }
         if (editorState.pickedFurnitureColor) {
           placed.color = { ...editorState.pickedFurnitureColor }
         }
@@ -509,6 +538,7 @@ export function useEditorActions(
     handleFloorColorChange,
     handleWallColorChange,
     handleSelectedFurnitureColorChange,
+    handleSelectedFurnitureTextChange,
     handleFurnitureTypeChange,
     handleDeleteSelected,
     handleRotateSelected,

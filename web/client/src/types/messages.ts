@@ -33,6 +33,7 @@ interface AgentMeta {
   isRemote?: boolean
   owner?: string
   fromElevator?: boolean
+  cliType?: string
 }
 
 /** 角色精靈圖方向資料 */
@@ -58,7 +59,7 @@ export interface DashboardPayload {
 /** 伺服器 → 客戶端訊息的 discriminated union */
 export type ServerMessage =
   | { type: 'layoutLoaded'; layout: OfficeLayout | null }
-  | { type: 'agentCreated'; id: number; isExternal?: boolean; projectName?: string; floorId?: string; isRemote?: boolean; owner?: string; fromElevator?: boolean }
+  | { type: 'agentCreated'; id: number; isExternal?: boolean; projectName?: string; floorId?: string; isRemote?: boolean; owner?: string; fromElevator?: boolean; cliType?: string }
   | { type: 'agentClosed'; id: number }
   | { type: 'existingAgents'; agents: number[]; agentMeta?: Record<number, AgentMeta> }
   | { type: 'agentToolStart'; id: number; toolId: string; status: string }
@@ -79,7 +80,7 @@ export type ServerMessage =
   | { type: 'floorTilesLoaded'; sprites: string[][][] }
   | { type: 'wallTilesLoaded'; sprites: string[][][] }
   | { type: 'furnitureAssetsLoaded'; catalog: FurnitureAsset[]; sprites: Record<string, string[][]> }
-  | { type: 'settingsLoaded'; soundEnabled: boolean }
+  | { type: 'settingsLoaded'; soundEnabled: boolean; zoom?: number; soundConfig?: { master?: boolean; waiting?: boolean; permission?: boolean; turnComplete?: boolean }; uiScale?: number; lanDiscoveryEnabled?: boolean; lanPeerName?: string }
   | { type: 'sessionsList'; sessions: SessionInfo[] }
   | { type: 'agentEmote'; id: number; emote: string }
   | { type: 'agentTranscript'; id: number; log: TranscriptEntry[] }
@@ -94,3 +95,7 @@ export type ServerMessage =
   | { type: 'chatHistory'; messages: Array<{ nickname: string; text: string; ts: number }> }
   | { type: 'agentFloorTransfer'; id: number; targetFloorId: string }
   | { type: 'dashboardData'; data: DashboardPayload }
+  | { type: 'agentGitBranch'; id: number; branch: string }
+  | { type: 'statusHistory'; id: number; history: Array<{ ts: number; status: string; detail?: string }> }
+  | { type: 'agentTeam'; id: number; teamName: string | null }
+  | { type: 'lanPeers'; peers: Array<{ name: string; host: string; port: number; agentCount: number }> }

@@ -3,8 +3,9 @@ import * as path from 'path';
 import type { AgentContext, AgentState } from './types.js';
 import { cancelWaitingTimer, cancelPermissionTimer, clearAgentActivity } from './timerManager.js';
 import { processTranscriptLine } from './transcriptParser.js';
-import { removeAgent, extractProjectName } from './agentManager.js';
+import { removeAgent, extractProjectName, detectCliTypeFromPath } from './agentManager.js';
 import { resolveFloorForProject } from './floorAssignment.js';
+import { getTeamName } from './teamNameStore.js';
 import { FILE_WATCHER_POLL_INTERVAL_MS, PROJECT_SCAN_INTERVAL_MS, ACTIVE_JSONL_MAX_AGE_MS, STALE_AGENT_TIMEOUT_MS, DEFAULT_FLOOR_ID } from './constants.js';
 
 /** 啟動檔案監視（fs.watch + 輪詢備援），偵測 JSONL 檔案變更 */
@@ -137,8 +138,9 @@ function scanAndAdopt(
 		// 僅收養最近活躍的檔案
 		if (!isRecentlyActive(file)) continue;
 
-		// 自動收養：為此外部 Claude 會話建立代理
+		// 自動收養：為此外部會話建立代理
 		const floorId = resolveFloorForProject(projectDir, ctx.building);
+		const cliType = detectCliTypeFromPath(projectDir);
 		const id = nextAgentIdRef.current++;
 		const agent: AgentState = {
 			id,
@@ -163,19 +165,29 @@ function scanAndAdopt(
 			isRemote: false,
 			owner: null,
 			remoteSessionId: null,
+			gitBranch: null,
+			statusHistory: [],
+			teamName: getTeamName(projectDir),
+			cliType,
 		};
 		agents.set(id, agent);
 		ctx.trackedJsonlFiles.set(file, id);
 		persistAgents();
 		console.log(`[Pixel Agents] Auto-adopted session: ${path.basename(file)} → Agent ${id} (floor: ${floorId})`);
 		const isExternal = projectDir !== ctx.ownProjectDir;
-		ctx.floorSender(floorId).postMessage({
+		const floorSend = ctx.floorSender(floorId);
+		floorSend.postMessage({
 			type: 'agentCreated',
 			id,
 			projectName: extractProjectName(projectDir),
 			floorId,
 			...(isExternal ? { isExternal: true } : {}),
+			...(cliType !== 'claude' ? { cliType } : {}),
 		});
+		// 若有持久化的團隊名稱，立即通知客戶端
+		if (agent.teamName) {
+			floorSend.postMessage({ type: 'agentTeam', id, teamName: agent.teamName });
+		}
 
 		// 立即開始監視檔案
 		startFileWatching(id, file, ctx);
@@ -248,7 +260,7 @@ export function reassignAgentToFile(
 
 	cancelWaitingTimer(agentId, waitingTimers);
 	cancelPermissionTimer(agentId, permissionTimers);
-	clearAgentActivity(agent, agentId, permissionTimers, ctx.floorSender(agent.floorId));
+	clearAgentActivity(agent, agentId, permissionTimers, ctx.floorSender(agent.floorId), ctx.progressExtensions);
 
 	ctx.trackedJsonlFiles.delete(agent.jsonlFile);
 	agent.jsonlFile = newFilePath;

@@ -56,6 +56,14 @@
   --pixel-overlay-z: 100;
   --pixel-overlay-selected-z: 110;
   --pixel-controls-z: 50;
+
+  /* UI scaling factor (set via JS) */
+  --pixel-ui-scale: 1;
+}
+
+/* 套用 UI 縮放至所有覆蓋層元素（非 canvas） */
+[style*="--pixel-ui-scale"] {
+  font-size: calc(16px * var(--pixel-ui-scale));
 }
 
 html, body, #root {

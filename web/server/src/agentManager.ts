@@ -1,11 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { spawn, execSync } from 'child_process';
+import { spawn } from 'child_process';
 import type { AgentContext, AgentState, PersistedAgent, MessageSender } from './types.js';
 import { cancelWaitingTimer, cancelPermissionTimer } from './timerManager.js';
 import { startFileWatching, readNewLines } from './fileWatcher.js';
-import { JSONL_POLL_INTERVAL_MS, JSONL_POLL_TIMEOUT_MS, LAYOUT_FILE_DIR, AGENTS_FILE_NAME, IGNORED_PROJECT_DIR_PATTERNS, DEFAULT_FLOOR_ID } from './constants.js';
+import { JSONL_POLL_INTERVAL_MS, JSONL_POLL_TIMEOUT_MS, LAYOUT_FILE_DIR, AGENTS_FILE_NAME, DEFAULT_FLOOR_ID } from './constants.js';
 import { getCustomName, isProjectExcluded } from './projectNameStore.js';
 import { resolveFloorForProject } from './floorAssignment.js';
 import {
@@ -17,15 +17,7 @@ import {
 	listPixelAgentSessions,
 	parseSessionUuid,
 } from './tmuxManager.js';
-
-// 啟動時解析 claude 二進位檔案的完整路徑
-const CLAUDE_BIN = (() => {
-	try {
-		return execSync('which claude', { encoding: 'utf-8' }).trim();
-	} catch {
-		return 'claude'; // 備選
-	}
-})();
+import { type CLIAdapter, type CliType, getAdapter, getAllAdapters } from './cliAdapters/index.js';
 
 /** 從專案目錄名稱提取可讀的專案名稱（優先使用自訂名稱，回退至最後一段非空片段） */
 export function extractProjectName(projectDir: string): string {
@@ -42,19 +34,39 @@ export function getProjectDirPath(cwd: string): string {
 	return path.join(os.homedir(), '.claude', 'projects', dirName);
 }
 
-/** 取得所有 Claude 專案目錄清單（排除 observer-sessions 等忽略模式） */
-export function getAllProjectDirs(): string[] {
-	const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
+/** 取得指定 CLI 類型的所有專案目錄清單（排除忽略模式和排除清單） */
+export function getProjectDirsForCli(adapter: CLIAdapter): string[] {
+	const projectsRoot = adapter.getProjectsRoot();
+	const ignoredPatterns = adapter.ignoredDirPatterns();
 	try {
 		const entries = fs.readdirSync(projectsRoot, { withFileTypes: true });
 		return entries
 			.filter(e => e.isDirectory())
-			.filter(e => !IGNORED_PROJECT_DIR_PATTERNS.some(p => e.name.includes(p)))
+			.filter(e => !ignoredPatterns.some(p => e.name.includes(p)))
 			.map(e => path.join(projectsRoot, e.name))
 			.filter(dir => !isProjectExcluded(dir));
 	} catch {
 		return [];
 	}
+}
+
+/** 取得所有已註冊 CLI 的專案目錄清單 */
+export function getAllProjectDirs(): string[] {
+	const dirs: string[] = [];
+	for (const adapter of getAllAdapters()) {
+		dirs.push(...getProjectDirsForCli(adapter));
+	}
+	return dirs;
+}
+
+/** 根據專案目錄路徑推斷 CLI 類型 */
+export function detectCliTypeFromPath(projectDir: string): CliType {
+	for (const adapter of getAllAdapters()) {
+		if (projectDir.startsWith(adapter.getProjectsRoot())) {
+			return adapter.name;
+		}
+	}
+	return 'claude'; // 預設
 }
 
 // ── 持久化 ─────────────────────────────────────────────
@@ -77,6 +89,7 @@ export function savePersistedAgents(agents: Map<number, AgentState>): void {
 			projectDir: agent.projectDir,
 			tmuxSessionName: agent.tmuxSessionName ?? undefined,
 			floorId: agent.floorId,
+			...(agent.cliType !== 'claude' ? { cliType: agent.cliType } : {}),
 		});
 	}
 	try {
@@ -102,19 +115,6 @@ export function loadPersistedAgents(): PersistedAgent[] {
 	}
 }
 
-// ── 輔助函式：建構不含 CLAUDE* 變數的乾淨環境 ──────────
-
-/** 建構乾淨的環境變數（移除所有 CLAUDE 前綴的變數以避免巢狀偵測） */
-function buildCleanEnv(): Record<string, string | undefined> {
-	const cleanEnv = { ...process.env };
-	for (const key of Object.keys(cleanEnv)) {
-		if (key.startsWith('CLAUDE')) {
-			delete cleanEnv[key];
-		}
-	}
-	return cleanEnv;
-}
-
 // ── 輔助函式：建立代理狀態 ───────
 
 /** 建立代理初始狀態，包含檔案偏移量與所有追蹤用的資料結構 */
@@ -125,6 +125,7 @@ function createAgentState(
 	tmuxName: string | null,
 	isDetached: boolean,
 	floorId: string = DEFAULT_FLOOR_ID,
+	cliType: string = 'claude',
 ): AgentState {
 	let fileOffset = 0;
 	try {
@@ -156,51 +157,61 @@ function createAgentState(
 		isRemote: false,
 		owner: null,
 		remoteSessionId: null,
+		gitBranch: null,
+		statusHistory: [],
+		teamName: null,
+		cliType,
 	};
 }
 
 // ── 共用的生成邏輯 ──────────────────────────────────────
 
-/** 生成 Claude 代理進程（透過 tmux 或直接生成），建立狀態並啟動檔案監視 */
-function spawnClaudeAgent(
+/** 生成 CLI 代理進程（透過 tmux 或直接生成），建立狀態並啟動檔案監視 */
+function spawnCliAgent(
 	args: string[],
 	cwd: string,
 	expectedFile: string,
 	label: string,
 	sessionUuid: string,
 	ctx: AgentContext,
+	cliType: CliType = 'claude',
 ): void {
 	const {
 		nextAgentIdRef, agents, activeAgentIdRef, knownJsonlFiles,
 		jsonlPollTimers, persistAgents,
 	} = ctx;
 
+	const adapter = getAdapter(cliType);
+	if (!adapter) {
+		console.error(`[Pixel Agents] No adapter found for CLI type: ${cliType}`);
+		return;
+	}
+
 	const projectDir = path.dirname(expectedFile);
 	knownJsonlFiles.add(expectedFile);
 
-	const cleanEnv = buildCleanEnv();
+	const cleanEnv = adapter.buildCleanEnv();
+	const binaryPath = adapter.getBinaryPath();
 	const id = nextAgentIdRef.current++;
 
 	const useTmux = isTmuxAvailable();
 	let tmuxName: string | null = null;
 
 	if (useTmux) {
-		// 在 tmux 中生成以實現持久化
 		tmuxName = buildTmuxName(sessionUuid);
-		console.log(`[Pixel Agents] Using tmux session: ${tmuxName}`);
-		createTmuxSession(tmuxName, CLAUDE_BIN, args, cwd, cleanEnv);
+		console.log(`[Pixel Agents] Using tmux session: ${tmuxName} (cli: ${cliType})`);
+		createTmuxSession(tmuxName, binaryPath, args, cwd, cleanEnv);
 	} else {
 		console.log(`[Pixel Agents] tmux not available, using direct spawn`);
 	}
 
 	const floorId = resolveFloorForProject(projectDir, ctx.building);
-	const agent = createAgentState(id, expectedFile, projectDir, tmuxName, false, floorId);
+	const agent = createAgentState(id, expectedFile, projectDir, tmuxName, false, floorId, cliType);
 	const floorSend = ctx.floorSender(floorId);
 
 	if (!useTmux) {
-		// 直接生成 — 追蹤進程
-		console.log(`[Pixel Agents] Using claude binary: ${CLAUDE_BIN}`);
-		const proc = spawn(CLAUDE_BIN, args, {
+		console.log(`[Pixel Agents] Using ${cliType} binary: ${binaryPath}`);
+		const proc = spawn(binaryPath, args, {
 			cwd,
 			stdio: ['pipe', 'pipe', 'pipe'],
 			env: cleanEnv,
@@ -244,6 +255,7 @@ function spawnClaudeAgent(
 		projectName: extractProjectName(projectDir),
 		floorId,
 		...(isExternal ? { isExternal: true } : {}),
+		...(cliType !== 'claude' ? { cliType } : {}),
 	});
 
 	ctx.broadcastFloorSummaries();
@@ -275,7 +287,7 @@ function spawnClaudeAgent(
 	jsonlPollTimers.set(id, pollTimer);
 }
 
-/** 恢復既有的 Claude 會話 */
+/** 恢復既有的會話（自動判斷 CLI 類型） */
 export function resumeSession(
 	sessionId: string,
 	sessionProjectDir: string,
@@ -283,11 +295,14 @@ export function resumeSession(
 	ctx: AgentContext,
 ): void {
 	const expectedFile = path.join(sessionProjectDir, `${sessionId}.jsonl`);
+	const cliType = detectCliTypeFromPath(sessionProjectDir);
+	const adapter = getAdapter(cliType);
+	const args = adapter ? adapter.buildResumeArgs(sessionId) : ['--resume', sessionId];
 
-	spawnClaudeAgent(
-		['--resume', sessionId], cwd, expectedFile,
+	spawnCliAgent(
+		args, cwd, expectedFile,
 		`resumed session ${sessionId}`,
-		sessionId, ctx,
+		sessionId, ctx, cliType,
 	);
 }
 
@@ -415,14 +430,15 @@ export function recoverTmuxAgents(
 		knownJsonlFiles.add(jsonlFile);
 
 		const floorId = persistedFloorId || resolveFloorForProject(projectDir, ctx.building);
+		const cliType = match?.cliType || detectCliTypeFromPath(projectDir);
 		const id = nextAgentIdRef.current++;
-		const agent = createAgentState(id, jsonlFile, projectDir, sessionName, false, floorId);
+		const agent = createAgentState(id, jsonlFile, projectDir, sessionName, false, floorId, cliType);
 		// 從頭讀取以重建狀態
 		agent.fileOffset = 0;
 		agents.set(id, agent);
 		ctx.trackedJsonlFiles.set(agent.jsonlFile, id);
 
-		console.log(`[Pixel Agents] Recovered tmux agent ${id}: ${sessionName} (floor: ${floorId})`);
+		console.log(`[Pixel Agents] Recovered tmux agent ${id}: ${sessionName} (floor: ${floorId}, cli: ${cliType})`);
 		const isExternal = projectDir !== ctx.ownProjectDir;
 		ctx.floorSender(floorId).postMessage({
 			type: 'agentCreated',
@@ -430,6 +446,7 @@ export function recoverTmuxAgents(
 			projectName: extractProjectName(projectDir),
 			floorId,
 			...(isExternal ? { isExternal: true } : {}),
+			...(cliType !== 'claude' ? { cliType } : {}),
 		});
 
 		// 啟動檔案監視
@@ -488,7 +505,7 @@ export function sendExistingAgents(
 	agentIds.sort((a, b) => a - b);
 
 	// 為每個代理補充專案資訊
-	const enrichedMeta: Record<string, { palette?: number; hueShift?: number; seatId?: string; isExternal?: boolean; projectName?: string; floorId?: string; isRemote?: boolean; owner?: string }> = {};
+	const enrichedMeta: Record<string, { palette?: number; hueShift?: number; seatId?: string; isExternal?: boolean; projectName?: string; floorId?: string; isRemote?: boolean; owner?: string; cliType?: string }> = {};
 	for (const [idStr, meta] of Object.entries(agentMeta)) {
 		enrichedMeta[idStr] = { ...meta };
 	}
@@ -502,6 +519,9 @@ export function sendExistingAgents(
 		const isExternal = agent.projectDir !== ownProjectDir;
 		if (isExternal) {
 			enrichedMeta[key].isExternal = true;
+		}
+		if (agent.cliType !== 'claude') {
+			enrichedMeta[key].cliType = agent.cliType;
 		}
 		if (agent.isRemote) {
 			enrichedMeta[key].isRemote = true;

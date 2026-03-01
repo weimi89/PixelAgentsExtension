@@ -101,6 +101,16 @@ export function toggleFurnitureState(layout: OfficeLayout, uid: string): OfficeL
   }
 }
 
+/** 更新像素文字家具的文字。返回新佈局（不可變）。 */
+export function updateFurnitureText(layout: OfficeLayout, uid: string, text: string): OfficeLayout {
+  const item = layout.furniture.find((f) => f.uid === uid)
+  if (!item) return layout
+  return {
+    ...layout,
+    furniture: layout.furniture.map((f) => (f.uid === uid ? { ...f, text } : f)),
+  }
+}
+
 /** 對於牆面項目，偏移列位使底部列對齊懸停的磚塊。 */
 export function getWallPlacementRow(type: string, row: number): number {
   const entry = getCatalogEntry(type)

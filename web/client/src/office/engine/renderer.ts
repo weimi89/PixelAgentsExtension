@@ -7,6 +7,16 @@ import { renderMatrixEffect } from './matrixEffect.js'
 import { getColorizedFloorSprite, hasFloorSprites, WALL_COLOR } from '../floorTiles.js'
 import { hasWallSprites, getWallInstances, wallColorToHex } from '../wallTiles.js'
 import {
+  MINIMAP_MARGIN,
+  MINIMAP_MIN_SIZE,
+  MINIMAP_MAX_SIZE,
+  MINIMAP_TILE_MIN_PX,
+  MINIMAP_DOT_SIZE,
+  MINIMAP_VIEWPORT_STROKE,
+  MINIMAP_BG_COLOR,
+  MINIMAP_FLOOR_COLOR,
+  MINIMAP_WALL_COLOR,
+  MINIMAP_FURNITURE_COLOR,
   CHARACTER_SITTING_OFFSET_PX,
   CHARACTER_Z_SORT_OFFSET,
   OUTLINE_Z_SORT_OFFSET,
@@ -45,6 +55,11 @@ import {
   SUBAGENT_GLOW_ALPHA,
   REMOTE_AGENT_GLOW_COLOR,
   REMOTE_AGENT_GLOW_ALPHA,
+  TEAM_BADGE_SIZE,
+  TEAM_BADGE_VERTICAL_OFFSET_PX,
+  TEAM_CONNECTION_LINE_ALPHA,
+  TEAM_CONNECTION_LINE_WIDTH,
+  TEAM_CONNECTION_DASH,
 } from '../../constants.js'
 
 // ── 渲染函式 ────────────────────────────────────────────
@@ -568,6 +583,77 @@ export function renderEmotes(
   }
 }
 
+// ── 團隊視覺化 ────────────────────────────────────────────
+
+export function renderTeamConnections(
+  ctx: CanvasRenderingContext2D,
+  characters: Character[],
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+): void {
+  // 按團隊分組角色
+  const teamMap = new Map<string, Character[]>()
+  for (const ch of characters) {
+    if (!ch.teamName || !ch.teamColor || ch.matrixEffect) continue
+    let list = teamMap.get(ch.teamName)
+    if (!list) {
+      list = []
+      teamMap.set(ch.teamName, list)
+    }
+    list.push(ch)
+  }
+
+  ctx.save()
+  ctx.globalAlpha = TEAM_CONNECTION_LINE_ALPHA
+  ctx.lineWidth = TEAM_CONNECTION_LINE_WIDTH * zoom
+  ctx.setLineDash(TEAM_CONNECTION_DASH.map(d => d * zoom))
+
+  for (const [, members] of teamMap) {
+    if (members.length < 2) continue
+    const color = members[0].teamColor!
+    ctx.strokeStyle = color
+
+    // 連接所有成員（鏈式：0→1→2→...）
+    for (let i = 0; i < members.length - 1; i++) {
+      const a = members[i]
+      const b = members[i + 1]
+      const sittingOffA = isSittingState(a.state) ? CHARACTER_SITTING_OFFSET_PX : 0
+      const sittingOffB = isSittingState(b.state) ? CHARACTER_SITTING_OFFSET_PX : 0
+      const ax = Math.round(offsetX + (a.x + 8) * zoom)
+      const ay = Math.round(offsetY + (a.y + sittingOffA - 8) * zoom)
+      const bx = Math.round(offsetX + (b.x + 8) * zoom)
+      const by = Math.round(offsetY + (b.y + sittingOffB - 8) * zoom)
+      ctx.beginPath()
+      ctx.moveTo(ax, ay)
+      ctx.lineTo(bx, by)
+      ctx.stroke()
+    }
+  }
+
+  ctx.restore()
+}
+
+export function renderTeamBadges(
+  ctx: CanvasRenderingContext2D,
+  characters: Character[],
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+): void {
+  for (const ch of characters) {
+    if (!ch.teamColor || ch.matrixEffect) continue
+
+    const sittingOff = isSittingState(ch.state) ? CHARACTER_SITTING_OFFSET_PX : 0
+    const badgePx = TEAM_BADGE_SIZE * zoom
+    const bx = Math.round(offsetX + (ch.x + 8) * zoom - badgePx / 2)
+    const by = Math.round(offsetY + (ch.y + sittingOff - TEAM_BADGE_VERTICAL_OFFSET_PX) * zoom)
+
+    ctx.fillStyle = ch.teamColor
+    ctx.fillRect(bx, by, badgePx, badgePx)
+  }
+}
+
 export interface ButtonBounds {
   /** 裝置像素中的中心 X */
   cx: number
@@ -658,10 +744,16 @@ export function renderFrame(
     ? [...wallInstances, ...furniture]
     : furniture
 
+  // 團隊連接線（在角色下方）
+  renderTeamConnections(ctx, characters, offsetX, offsetY, zoom)
+
   // 繪製牆壁 + 家具 + 角色（Z-sort）
   const selectedId = selection?.selectedAgentId ?? null
   const hoveredId = selection?.hoveredAgentId ?? null
   renderScene(ctx, allFurniture, characters, offsetX, offsetY, zoom, selectedId, hoveredId)
+
+  // 團隊徽章（在角色上方）
+  renderTeamBadges(ctx, characters, offsetX, offsetY, zoom)
 
   // 對話氣泡（始終在角色上方）
   renderBubbles(ctx, characters, offsetX, offsetY, zoom)
@@ -703,4 +795,124 @@ export function renderFrame(
   }
 
   return { offsetX, offsetY }
+}
+
+// ── 迷你地圖 ────────────────────────────────────────────────
+
+export interface MinimapBounds {
+  /** minimap 在 canvas 上的裝置像素矩形 */
+  x: number
+  y: number
+  w: number
+  h: number
+  /** 每格在 minimap 上的裝置像素大小 */
+  tilePx: number
+  cols: number
+  rows: number
+}
+
+export function renderMinimap(
+  ctx: CanvasRenderingContext2D,
+  canvasWidth: number,
+  canvasHeight: number,
+  tileMap: TileTypeVal[][],
+  furniture: FurnitureInstance[],
+  characters: Character[],
+  zoom: number,
+  offsetX: number,
+  offsetY: number,
+  layoutCols: number,
+  layoutRows: number,
+): MinimapBounds | null {
+  if (layoutCols === 0 || layoutRows === 0) return null
+
+  // 計算 minimap 尺寸：適配地圖比例，限制在 MIN-MAX 範圍
+  const aspect = layoutCols / layoutRows
+  let mmW: number
+  let mmH: number
+  const tilePx = Math.max(MINIMAP_TILE_MIN_PX, Math.floor(MINIMAP_MAX_SIZE / Math.max(layoutCols, layoutRows)))
+  mmW = layoutCols * tilePx
+  mmH = layoutRows * tilePx
+  if (mmW > MINIMAP_MAX_SIZE) { mmW = MINIMAP_MAX_SIZE; mmH = mmW / aspect }
+  if (mmH > MINIMAP_MAX_SIZE) { mmH = MINIMAP_MAX_SIZE; mmW = mmH * aspect }
+  if (mmW < MINIMAP_MIN_SIZE && mmH < MINIMAP_MIN_SIZE) {
+    if (aspect >= 1) { mmW = MINIMAP_MIN_SIZE; mmH = mmW / aspect }
+    else { mmH = MINIMAP_MIN_SIZE; mmW = mmH * aspect }
+  }
+
+  mmW = Math.round(mmW)
+  mmH = Math.round(mmH)
+
+  const margin = MINIMAP_MARGIN
+  const mmX = canvasWidth - mmW - margin
+  const mmY = canvasHeight - mmH - margin
+
+  // 背景
+  ctx.fillStyle = MINIMAP_BG_COLOR
+  ctx.fillRect(mmX - 2, mmY - 2, mmW + 4, mmH + 4)
+  ctx.strokeStyle = 'rgba(100,100,140,0.5)'
+  ctx.lineWidth = 1
+  ctx.strokeRect(mmX - 2, mmY - 2, mmW + 4, mmH + 4)
+
+  // 繪製磚塊
+  const tileW = mmW / layoutCols
+  const tileH = mmH / layoutRows
+  for (let r = 0; r < layoutRows && r < tileMap.length; r++) {
+    for (let c = 0; c < layoutCols && tileMap[r] && c < tileMap[r].length; c++) {
+      const tile = tileMap[r][c]
+      if (tile === TileType.VOID) continue
+      ctx.fillStyle = tile === TileType.WALL ? MINIMAP_WALL_COLOR : MINIMAP_FLOOR_COLOR
+      ctx.fillRect(mmX + c * tileW, mmY + r * tileH, Math.ceil(tileW), Math.ceil(tileH))
+    }
+  }
+
+  // 繪製家具（小色塊）
+  ctx.fillStyle = MINIMAP_FURNITURE_COLOR
+  for (const f of furniture) {
+    const fCol = f.x / TILE_SIZE
+    const fRow = f.y / TILE_SIZE
+    const fW = (f.sprite[0]?.length ?? TILE_SIZE) / TILE_SIZE
+    const fH = f.sprite.length / TILE_SIZE
+    ctx.fillRect(
+      mmX + fCol * tileW,
+      mmY + fRow * tileH,
+      Math.ceil(fW * tileW),
+      Math.ceil(fH * tileH),
+    )
+  }
+
+  // 繪製角色（彩色圓點）— palette 索引 → 代表色
+  const PALETTE_COLORS = ['#4a90d9', '#d94a4a', '#4ad97a', '#d9b44a', '#9b59b6', '#e67e22']
+  const dot = MINIMAP_DOT_SIZE
+  for (const ch of characters) {
+    if (ch.matrixEffect === 'despawn') continue
+    const cx = mmX + (ch.x / TILE_SIZE) * tileW
+    const cy = mmY + (ch.y / TILE_SIZE) * tileH
+    ctx.fillStyle = PALETTE_COLORS[ch.palette] ?? '#66ff66'
+    ctx.fillRect(Math.round(cx - dot / 2), Math.round(cy - dot / 2), dot, dot)
+  }
+
+  // 繪製視窗矩形
+  // 視窗在世界座標中的可見區域
+  const vpLeft = -offsetX / zoom
+  const vpTop = -offsetY / zoom
+  const vpWidth = canvasWidth / zoom
+  const vpHeight = canvasHeight / zoom
+
+  // 轉換為 minimap 座標
+  const vpMmX = mmX + (vpLeft / (layoutCols * TILE_SIZE)) * mmW
+  const vpMmY = mmY + (vpTop / (layoutRows * TILE_SIZE)) * mmH
+  const vpMmW = (vpWidth / (layoutCols * TILE_SIZE)) * mmW
+  const vpMmH = (vpHeight / (layoutRows * TILE_SIZE)) * mmH
+
+  ctx.strokeStyle = MINIMAP_VIEWPORT_STROKE
+  ctx.lineWidth = 1
+  ctx.strokeRect(
+    Math.max(mmX, vpMmX),
+    Math.max(mmY, vpMmY),
+    Math.min(vpMmW, mmW),
+    Math.min(vpMmH, mmH),
+  )
+
+  return { x: mmX, y: mmY, w: mmW, h: mmH, tilePx: tileW, cols: layoutCols, rows: layoutRows }
 }

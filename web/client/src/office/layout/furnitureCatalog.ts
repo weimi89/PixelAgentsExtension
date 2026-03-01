@@ -1,5 +1,6 @@
 import { FurnitureType } from '../types.js'
 import type { FurnitureCatalogEntry, SpriteData } from '../types.js'
+import { renderPixelText, getPixelTextFootprintW } from '../sprites/pixelFont.js'
 import {
   DESK_SQUARE_SPRITE,
   BOOKSHELF_SPRITE,
@@ -107,6 +108,9 @@ export const FURNITURE_CATALOG: CatalogEntryWithCategory[] = [
   { type: FurnitureType.LOCKER,             label: '置物櫃',     footprintW: 1, footprintH: 2, sprite: LOCKER_SPRITE,             isDesk: false, category: 'storage' },
   { type: FurnitureType.COAT_RACK,          label: '衣帽架',     footprintW: 1, footprintH: 1, sprite: COAT_RACK_SPRITE,          isDesk: false, category: 'decor' },
   { type: FurnitureType.POTTED_CACTUS,      label: '仙人掌',     footprintW: 1, footprintH: 1, sprite: POTTED_CACTUS_SPRITE,      isDesk: false, category: 'decor' },
+
+  // ── 像素文字 ──
+  { type: FurnitureType.PIXEL_TEXT, label: '像素文字', footprintW: 1, footprintH: 1, sprite: renderPixelText('TEXT'), isDesk: false, category: 'wall', canPlaceOnWalls: true, isPixelText: true },
 
 ]
 
@@ -302,6 +306,22 @@ export function getCatalogEntry(type: string): CatalogEntryWithCategory | undefi
   }
   const catalog = dynamicCatalog || FURNITURE_CATALOG
   return catalog.find((e) => e.type === type)
+}
+
+/** 取得像素文字家具的動態目錄條目（依文字內容調整精靈圖和佔地） */
+export function getPixelTextEntry(text: string, color?: string): CatalogEntryWithCategory {
+  const sprite = renderPixelText(text || 'TEXT', color || '#ffffff')
+  return {
+    type: FurnitureType.PIXEL_TEXT,
+    label: '像素文字',
+    footprintW: getPixelTextFootprintW(text || 'TEXT', 16),
+    footprintH: 1,
+    sprite,
+    isDesk: false,
+    category: 'wall',
+    canPlaceOnWalls: true,
+    isPixelText: true,
+  }
 }
 
 export function getCatalogByCategory(category: FurnitureCategory): CatalogEntryWithCategory[] {

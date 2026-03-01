@@ -156,6 +156,8 @@ export function createCharacter(
     behaviorTimer: 0,
     meetingTableUid: null,
     transferTargetFloor: null,
+    teamName: null,
+    teamColor: null,
   }
 }
 

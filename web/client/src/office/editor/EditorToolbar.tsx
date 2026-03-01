@@ -47,6 +47,8 @@ interface EditorToolbarProps {
   selectedFurnitureType: string
   selectedFurnitureUid: string | null
   selectedFurnitureColor: FloorColor | null
+  selectedFurnitureText: string | null
+  selectedFurnitureIsPixelText: boolean
   floorColor: FloorColor
   wallColor: FloorColor
   onToolChange: (tool: EditTool) => void
@@ -54,6 +56,7 @@ interface EditorToolbarProps {
   onFloorColorChange: (color: FloorColor) => void
   onWallColorChange: (color: FloorColor) => void
   onSelectedFurnitureColorChange: (color: FloorColor | null) => void
+  onSelectedFurnitureTextChange: (text: string) => void
   onFurnitureTypeChange: (type: string) => void
   loadedAssets?: LoadedAssetData
 }
@@ -146,6 +149,8 @@ export const EditorToolbar = memo(function EditorToolbar({
   selectedFurnitureType,
   selectedFurnitureUid,
   selectedFurnitureColor,
+  selectedFurnitureText,
+  selectedFurnitureIsPixelText,
   floorColor,
   wallColor,
   onToolChange,
@@ -153,6 +158,7 @@ export const EditorToolbar = memo(function EditorToolbar({
   onFloorColorChange,
   onWallColorChange,
   onSelectedFurnitureColorChange,
+  onSelectedFurnitureTextChange,
   onFurnitureTypeChange,
   loadedAssets,
 }: EditorToolbarProps) {
@@ -418,6 +424,31 @@ export const EditorToolbar = memo(function EditorToolbar({
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* 像素文字輸入 — 當選取的家具為像素文字時顯示 */}
+      {selectedFurnitureUid && selectedFurnitureIsPixelText && (
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center', padding: '4px 0' }}>
+          <span style={{ fontSize: '20px', color: '#999', flexShrink: 0 }}>{t.pixelTextLabel}</span>
+          <input
+            type="text"
+            value={selectedFurnitureText ?? ''}
+            onChange={(e) => onSelectedFurnitureTextChange(e.target.value.toUpperCase())}
+            placeholder={t.pixelTextPlaceholder}
+            maxLength={20}
+            style={{
+              flex: 1,
+              padding: '3px 6px',
+              fontSize: '20px',
+              background: '#181828',
+              color: 'rgba(255, 255, 255, 0.8)',
+              border: '2px solid #4a4a6a',
+              borderRadius: 0,
+              outline: 'none',
+              fontFamily: 'inherit',
+            }}
+          />
         </div>
       )}
 

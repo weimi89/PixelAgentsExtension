@@ -1,9 +1,9 @@
 import { useRef, useEffect, useCallback } from 'react'
 import type { OfficeState } from '../engine/officeState.js'
 import type { EditorState } from '../editor/editorState.js'
-import type { EditorRenderState, SelectionRenderState, DeleteButtonBounds, RotateButtonBounds } from '../engine/renderer.js'
+import type { EditorRenderState, SelectionRenderState, DeleteButtonBounds, RotateButtonBounds, MinimapBounds } from '../engine/renderer.js'
 import { startGameLoop } from '../engine/gameLoop.js'
-import { renderFrame } from '../engine/renderer.js'
+import { renderFrame, renderMinimap } from '../engine/renderer.js'
 import { TILE_SIZE, EditTool } from '../types.js'
 import { CAMERA_FOLLOW_LERP, CAMERA_FOLLOW_SNAP_THRESHOLD, ZOOM_MIN, ZOOM_MAX, ZOOM_SCROLL_THRESHOLD, PAN_MARGIN_FRACTION, LONG_PRESS_DURATION_MS } from '../../constants.js'
 import { getDayPhase, getDayNightOverlay } from '../engine/dayNightCycle.js'
@@ -29,9 +29,10 @@ interface OfficeCanvasProps {
   panRef: React.MutableRefObject<{ x: number; y: number }>
   dayNightEnabled?: boolean
   dayNightTimeOverride?: number | null
+  onContextMenu?: (agentId: number, x: number, y: number) => void
 }
 
-export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, onEditorTileAction, onEditorEraseAction, onEditorSelectionChange, onDeleteSelected, onRotateSelected, onDragMove, editorTick: _editorTick, zoom, onZoomChange, panRef, dayNightEnabled, dayNightTimeOverride }: OfficeCanvasProps) {
+export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, onEditorTileAction, onEditorEraseAction, onEditorSelectionChange, onDeleteSelected, onRotateSelected, onDragMove, editorTick: _editorTick, zoom, onZoomChange, panRef, dayNightEnabled, dayNightTimeOverride, onContextMenu: onContextMenuProp }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const offsetRef = useRef({ x: 0, y: 0 })
@@ -51,6 +52,8 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
   const rotateButtonBoundsRef = useRef<RotateButtonBounds | null>(null)
   // 右鍵擦除拖曳
   const isEraseDraggingRef = useRef(false)
+  // 迷你地圖邊界
+  const minimapBoundsRef = useRef<MinimapBounds | null>(null)
   // 縮放滾動累加器，用於觸控板縮放靈敏度
   const zoomAccumulatorRef = useRef(0)
   // 觸控長按
@@ -254,6 +257,22 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
         )
         offsetRef.current = { x: offsetX, y: offsetY }
 
+        // 迷你地圖（非編輯模式時繪製）
+        if (!isEditMode) {
+          minimapBoundsRef.current = renderMinimap(
+            ctx, w, h,
+            officeState.tileMap,
+            officeState.furniture,
+            officeState.getCharacters(),
+            zoomRef.current,
+            offsetX, offsetY,
+            officeState.getLayout().cols,
+            officeState.getLayout().rows,
+          )
+        } else {
+          minimapBoundsRef.current = null
+        }
+
         // 儲存刪除/旋轉按鈕邊界以供命中測試
         deleteButtonBoundsRef.current = editorRender?.deleteButtonBounds ?? null
         rotateButtonBoundsRef.current = editorRender?.rotateButtonBounds ?? null
@@ -435,6 +454,32 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       unlockAudio()
+      // 迷你地圖點擊：將鏡頭移至對應位置
+      if (e.button === 0 && !isEditMode) {
+        const mm = minimapBoundsRef.current
+        if (mm) {
+          const dpr = window.devicePixelRatio || 1
+          const rect = canvasRef.current?.getBoundingClientRect()
+          if (rect) {
+            const deviceX = (e.clientX - rect.left) * dpr
+            const deviceY = (e.clientY - rect.top) * dpr
+            if (deviceX >= mm.x && deviceX <= mm.x + mm.w && deviceY >= mm.y && deviceY <= mm.y + mm.h) {
+              // 將 minimap 點擊位置轉換為世界格座標
+              const worldCol = ((deviceX - mm.x) / mm.w) * mm.cols
+              const worldRow = ((deviceY - mm.y) / mm.h) * mm.rows
+              // 計算平移使該位置置中
+              const layout = officeState.getLayout()
+              const mapW = layout.cols * TILE_SIZE * zoom
+              const mapH = layout.rows * TILE_SIZE * zoom
+              const targetPanX = mapW / 2 - worldCol * TILE_SIZE * zoom
+              const targetPanY = mapH / 2 - worldRow * TILE_SIZE * zoom
+              officeState.cameraFollowId = null
+              panRef.current = clampPan(targetPanX, targetPanY)
+              return
+            }
+          }
+        }
+      }
       // 滑鼠中鍵（button 1）開始平移
       if (e.button === 1) {
         e.preventDefault()
@@ -654,6 +699,15 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     if (isEditMode) return
+    // 檢查是否右鍵點擊到角色
+    const pos = screenToWorld(e.clientX, e.clientY)
+    if (pos) {
+      const hitId = officeState.getCharacterAt(pos.worldX, pos.worldY)
+      if (hitId !== null) {
+        onContextMenuProp?.(hitId, e.clientX, e.clientY)
+        return
+      }
+    }
     // 右鍵讓選取的代理走向該格
     if (officeState.selectedAgentId !== null) {
       const tile = screenToTile(e.clientX, e.clientY)
@@ -661,7 +715,7 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
         officeState.walkToTile(officeState.selectedAgentId, tile.col, tile.row)
       }
     }
-  }, [isEditMode, officeState, screenToTile])
+  }, [isEditMode, officeState, screenToTile, screenToWorld, onContextMenuProp])
 
   // 滾輪：Ctrl+滾輪縮放，普通滾輪/觸控板平移
   const handleWheel = useCallback(

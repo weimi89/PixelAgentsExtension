@@ -5,6 +5,7 @@ import { verifyToken } from './auth/jwt.js';
 import { resolveFloorForProject } from './floorAssignment.js';
 import { removeAgent } from './agentManager.js';
 import { cancelPermissionTimer } from './timerManager.js';
+import { appendStatusHistory } from './transcriptParser.js';
 import { MAX_TRANSCRIPT_LOG, TOOL_DONE_DELAY_MS } from './constants.js';
 
 interface SocketData {
@@ -103,6 +104,10 @@ function handleAgentNodeEvent(
 				isRemote: true,
 				owner: username,
 				remoteSessionId: event.sessionId,
+				gitBranch: null,
+				statusHistory: [],
+				teamName: null,
+				cliType: 'claude',
 			};
 
 			ctx.agents.set(id, agent);
@@ -165,6 +170,7 @@ function handleAgentNodeEvent(
 				status: event.toolStatus,
 			});
 			sender.postMessage({ type: 'agentStatus', id: agentId, status: 'active' });
+			appendStatusHistory(agent, 'active', event.toolStatus);
 			break;
 		}
 
@@ -175,6 +181,7 @@ function handleAgentNodeEvent(
 			if (!agent) return;
 			const sender = ctx.floorSender(agent.floorId);
 
+			const doneToolName = agent.activeToolNames.get(event.toolId);
 			agent.activeToolIds.delete(event.toolId);
 			agent.activeToolStatuses.delete(event.toolId);
 			agent.activeToolNames.delete(event.toolId);
@@ -183,6 +190,7 @@ function handleAgentNodeEvent(
 				agent.hadToolsInTurn = false;
 			}
 
+			appendStatusHistory(agent, 'tool_done', doneToolName || 'unknown');
 			const toolId = event.toolId;
 			setTimeout(() => {
 				sender.postMessage({ type: 'agentToolDone', id: agentId, toolId });
@@ -315,6 +323,7 @@ function handleAgentNodeEvent(
 			agent.permissionSent = false;
 			agent.hadToolsInTurn = false;
 			sender.postMessage({ type: 'agentStatus', id: agentId, status: 'waiting' });
+			appendStatusHistory(agent, 'waiting', 'turn_complete');
 			break;
 		}
 
@@ -328,12 +337,15 @@ function handleAgentNodeEvent(
 			if (event.status === 'waiting') {
 				agent.isWaiting = true;
 				sender.postMessage({ type: 'agentStatus', id: agentId, status: 'waiting' });
+				appendStatusHistory(agent, 'waiting');
 			} else if (event.status === 'permission') {
 				agent.permissionSent = true;
 				sender.postMessage({ type: 'agentToolPermission', id: agentId });
+				appendStatusHistory(agent, 'permission');
 			} else if (event.status === 'idle') {
 				agent.isWaiting = false;
 				sender.postMessage({ type: 'agentStatus', id: agentId, status: 'active' });
+				appendStatusHistory(agent, 'idle');
 			}
 			break;
 		}

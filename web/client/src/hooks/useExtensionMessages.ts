@@ -9,7 +9,8 @@ import { setFloorSprites } from '../office/floorTiles.js'
 import { setWallSprites } from '../office/wallTiles.js'
 import { setCharacterTemplates } from '../office/sprites/spriteData.js'
 import { vscode, onServerMessage } from '../socketApi.js'
-import { playDoneSound, setSoundEnabled } from '../notificationSound.js'
+import { playWaitingSound, playPermissionSound, playTurnCompleteSound, setSoundEnabled, setSoundConfig } from '../notificationSound.js'
+import { TEAM_COLORS } from '../constants.js'
 
 /** 從 Record<number, T> 中移除指定鍵，若鍵不存在則回傳原始物件（避免不必要的重渲染） */
 function removeKey<T>(prev: Record<number, T>, id: number): Record<number, T> {
@@ -72,6 +73,16 @@ export interface ExtensionMessageState {
   floorSummaries: Record<string, number>
   /** 聊天訊息 */
   chatMessages: Array<{ nickname: string; text: string; ts: number }>
+  /** agentId → git 分支名稱 */
+  agentGitBranches: Record<number, string>
+  /** agentId → 狀態歷史 */
+  agentStatusHistory: Record<number, Array<{ ts: number; status: string; detail?: string }>>
+  /** agentId → 團隊名稱 */
+  agentTeams: Record<number, string>
+  /** agentId → CLI 類型 */
+  agentCliTypes: Record<number, string>
+  /** 區網已發現的同伴 */
+  lanPeers: Array<{ name: string; host: string; port: number; agentCount: number }>
 }
 
 /** 轉錄記錄條目 */
@@ -98,6 +109,8 @@ interface HandlerContext {
   pendingAgentsRef: React.MutableRefObject<Array<{ id: number; palette?: number; hueShift?: number; seatId?: string }>>
   isEditDirty?: () => boolean
   onLayoutLoaded?: (layout: OfficeLayout) => void
+  onZoomLoaded?: (zoom: number) => void
+  onUiScaleLoaded?: (scale: number) => void
   setAgents: React.Dispatch<React.SetStateAction<number[]>>
   setSelectedAgent: React.Dispatch<React.SetStateAction<number | null>>
   setAgentTools: React.Dispatch<React.SetStateAction<Record<number, ToolActivity[]>>>
@@ -116,6 +129,11 @@ interface HandlerContext {
   setBuilding: React.Dispatch<React.SetStateAction<BuildingConfig | null>>
   setFloorSummaries: React.Dispatch<React.SetStateAction<Record<string, number>>>
   setChatMessages: React.Dispatch<React.SetStateAction<Array<{ nickname: string; text: string; ts: number }>>>
+  setAgentGitBranches: React.Dispatch<React.SetStateAction<Record<number, string>>>
+  setAgentStatusHistory: React.Dispatch<React.SetStateAction<Record<number, Array<{ ts: number; status: string; detail?: string }>>>>
+  setAgentTeams: React.Dispatch<React.SetStateAction<Record<number, string>>>
+  setAgentCliTypes: React.Dispatch<React.SetStateAction<Record<number, string>>>
+  setLanPeers: React.Dispatch<React.SetStateAction<Array<{ name: string; host: string; port: number; agentCount: number }>>>
 }
 
 // ── Message Handlers ───────────────────────────────────────────
@@ -151,6 +169,9 @@ function handleAgentCreated(msg: ServerMessage & { type: 'agentCreated' }, ctx: 
   if (projectName) {
     ctx.setAgentProjects((prev) => ({ ...prev, [id]: projectName }))
   }
+  if (msg.cliType) {
+    ctx.setAgentCliTypes((prev) => ({ ...prev, [id]: msg.cliType! }))
+  }
   if (msg.isRemote && msg.owner) {
     ctx.setRemoteAgents((prev) => ({ ...prev, [id]: { owner: msg.owner! } }))
     ctx.os.setAgentRemote(id, true)
@@ -180,6 +201,10 @@ function handleAgentClosed(msg: ServerMessage & { type: 'agentClosed' }, ctx: Ha
   ctx.setRemoteAgents((prev) => removeKey(prev, id))
   ctx.setSubagentTools((prev) => removeKey(prev, id))
   ctx.setAgentTranscripts((prev) => removeKey(prev, id))
+  ctx.setAgentGitBranches((prev) => removeKey(prev, id))
+  ctx.setAgentStatusHistory((prev) => removeKey(prev, id))
+  ctx.setAgentTeams((prev) => removeKey(prev, id))
+  ctx.setAgentCliTypes((prev) => removeKey(prev, id))
   ctx.os.removeAllSubagents(id)
   ctx.setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id))
   ctx.os.removeAgent(id)
@@ -187,13 +212,17 @@ function handleAgentClosed(msg: ServerMessage & { type: 'agentClosed' }, ctx: Ha
 
 function handleExistingAgents(msg: ServerMessage & { type: 'existingAgents' }, ctx: HandlerContext): void {
   const incoming = msg.agents
-  const meta = msg.agentMeta || ({} as Record<number, { palette?: number; hueShift?: number; seatId?: string; isExternal?: boolean; projectName?: string; isRemote?: boolean; owner?: string }>)
+  const meta = msg.agentMeta || ({} as Record<number, { palette?: number; hueShift?: number; seatId?: string; isExternal?: boolean; projectName?: string; isRemote?: boolean; owner?: string; cliType?: string }>)
   const newProjects: Record<number, string> = {}
   const newRemote: Record<number, { owner: string }> = {}
+  const newCliTypes: Record<number, string> = {}
   for (const id of incoming) {
     const m = meta[id]
     if (m?.projectName) {
       newProjects[id] = m.projectName
+    }
+    if (m?.cliType) {
+      newCliTypes[id] = m.cliType
     }
     if (m?.isRemote && m?.owner) {
       newRemote[id] = { owner: m.owner }
@@ -210,6 +239,9 @@ function handleExistingAgents(msg: ServerMessage & { type: 'existingAgents' }, c
   }
   if (Object.keys(newRemote).length > 0) {
     ctx.setRemoteAgents((prev) => ({ ...prev, ...newRemote }))
+  }
+  if (Object.keys(newCliTypes).length > 0) {
+    ctx.setAgentCliTypes((prev) => ({ ...prev, ...newCliTypes }))
   }
   if (ctx.layoutReadyRef.current && incoming.length > 0) {
     saveAgentSeats(ctx.os)
@@ -269,6 +301,7 @@ function handleAgentToolsClear(msg: ServerMessage & { type: 'agentToolsClear' },
   ctx.setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id))
   ctx.os.setAgentTool(id, null)
   ctx.os.clearPermissionBubble(id)
+  playTurnCompleteSound()
 }
 
 function handleAgentSelected(msg: ServerMessage & { type: 'agentSelected' }, ctx: HandlerContext): void {
@@ -284,7 +317,7 @@ function handleAgentStatus(msg: ServerMessage & { type: 'agentStatus' }, ctx: Ha
   ctx.os.setAgentActive(id, status === 'active')
   if (status === 'waiting') {
     ctx.os.showWaitingBubble(id)
-    playDoneSound()
+    playWaitingSound()
   }
 }
 
@@ -299,6 +332,7 @@ function handleAgentToolPermission(msg: ServerMessage & { type: 'agentToolPermis
     }
   })
   ctx.os.showPermissionBubble(id)
+  playPermissionSound()
 }
 
 function handleSubagentToolPermission(msg: ServerMessage & { type: 'subagentToolPermission' }, ctx: HandlerContext): void {
@@ -412,8 +446,17 @@ function handleWallTilesLoaded(msg: ServerMessage & { type: 'wallTilesLoaded' })
   setWallSprites(msg.sprites)
 }
 
-function handleSettingsLoaded(msg: ServerMessage & { type: 'settingsLoaded' }): void {
+function handleSettingsLoaded(msg: ServerMessage & { type: 'settingsLoaded' }, ctx: HandlerContext): void {
   setSoundEnabled(msg.soundEnabled)
+  if (msg.soundConfig) {
+    setSoundConfig(msg.soundConfig)
+  }
+  if (msg.zoom != null) {
+    ctx.onZoomLoaded?.(msg.zoom)
+  }
+  if (msg.uiScale != null) {
+    ctx.onUiScaleLoaded?.(msg.uiScale)
+  }
 }
 
 function handleFurnitureAssetsLoaded(msg: ServerMessage & { type: 'furnitureAssetsLoaded' }, ctx: HandlerContext): void {
@@ -470,6 +513,10 @@ function handleAgentFloorTransfer(msg: ServerMessage & { type: 'agentFloorTransf
   ctx.setRemoteAgents((prev) => removeKey(prev, id))
   ctx.setSubagentTools((prev) => removeKey(prev, id))
   ctx.setAgentTranscripts((prev) => removeKey(prev, id))
+  ctx.setAgentGitBranches((prev) => removeKey(prev, id))
+  ctx.setAgentStatusHistory((prev) => removeKey(prev, id))
+  ctx.setAgentTeams((prev) => removeKey(prev, id))
+  ctx.setAgentCliTypes((prev) => removeKey(prev, id))
   ctx.os.removeAllSubagents(id)
   ctx.setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id))
 }
@@ -481,6 +528,47 @@ function handleChatMessage(msg: ServerMessage & { type: 'chatMessage' }, ctx: Ha
 
 function handleChatHistory(msg: ServerMessage & { type: 'chatHistory' }, ctx: HandlerContext): void {
   ctx.setChatMessages(msg.messages)
+}
+
+function handleAgentGitBranch(msg: ServerMessage & { type: 'agentGitBranch' }, ctx: HandlerContext): void {
+  const { id, branch } = msg
+  ctx.setAgentGitBranches((prev) => {
+    if (prev[id] === branch) return prev
+    return { ...prev, [id]: branch }
+  })
+}
+
+function handleStatusHistory(msg: ServerMessage & { type: 'statusHistory' }, ctx: HandlerContext): void {
+  const { id, history } = msg
+  ctx.setAgentStatusHistory((prev) => ({ ...prev, [id]: history }))
+}
+
+/** 為團隊名稱分配一致的顏色（基於名稱的哈希） */
+function getTeamColor(teamName: string): string {
+  let hash = 0
+  for (let i = 0; i < teamName.length; i++) {
+    hash = ((hash << 5) - hash + teamName.charCodeAt(i)) | 0
+  }
+  return TEAM_COLORS[Math.abs(hash) % TEAM_COLORS.length]
+}
+
+function handleAgentTeam(msg: ServerMessage & { type: 'agentTeam' }, ctx: HandlerContext): void {
+  const { id, teamName } = msg
+  if (teamName) {
+    const color = getTeamColor(teamName)
+    ctx.setAgentTeams((prev) => {
+      if (prev[id] === teamName) return prev
+      return { ...prev, [id]: teamName }
+    })
+    ctx.os.setAgentTeam(id, teamName, color)
+  } else {
+    ctx.setAgentTeams((prev) => removeKey(prev, id))
+    ctx.os.setAgentTeam(id, null, null)
+  }
+}
+
+function handleLanPeers(msg: ServerMessage & { type: 'lanPeers' }, ctx: HandlerContext): void {
+  ctx.setLanPeers(msg.peers)
 }
 
 function handleFloorSwitched(msg: ServerMessage & { type: 'floorSwitched' }, ctx: HandlerContext): void {
@@ -495,6 +583,10 @@ function handleFloorSwitched(msg: ServerMessage & { type: 'floorSwitched' }, ctx
   ctx.setAgentProjects({})
   ctx.setRemoteAgents({})
   ctx.setAgentTranscripts({})
+  ctx.setAgentGitBranches({})
+  ctx.setAgentStatusHistory({})
+  ctx.setAgentTeams({})
+  ctx.setAgentCliTypes({})
   ctx.os.clearAllAgents()
   ctx.layoutReadyRef.current = false
   ctx.setLayoutReady(false)
@@ -540,6 +632,10 @@ const messageHandlers: Record<string, HandlerFn> = {
   chatMessage: handleChatMessage as HandlerFn,
   chatHistory: handleChatHistory as HandlerFn,
   agentFloorTransfer: handleAgentFloorTransfer as HandlerFn,
+  agentGitBranch: handleAgentGitBranch as HandlerFn,
+  statusHistory: handleStatusHistory as HandlerFn,
+  agentTeam: handleAgentTeam as HandlerFn,
+  lanPeers: handleLanPeers as HandlerFn,
 }
 
 // ── Hook ────────────────────────────────────────────────────────
@@ -548,6 +644,8 @@ export function useExtensionMessages(
   getOfficeState: () => OfficeState,
   onLayoutLoaded?: (layout: OfficeLayout) => void,
   isEditDirty?: () => boolean,
+  onZoomLoaded?: (zoom: number) => void,
+  onUiScaleLoaded?: (scale: number) => void,
 ): ExtensionMessageState {
   const [agents, setAgents] = useState<number[]>([])
   const [selectedAgent, setSelectedAgent] = useState<number | null>(null)
@@ -567,6 +665,11 @@ export function useExtensionMessages(
   const [building, setBuilding] = useState<BuildingConfig | null>(null)
   const [floorSummaries, setFloorSummaries] = useState<Record<string, number>>({})
   const [chatMessages, setChatMessages] = useState<Array<{ nickname: string; text: string; ts: number }>>([])
+  const [agentGitBranches, setAgentGitBranches] = useState<Record<number, string>>({})
+  const [agentStatusHistory, setAgentStatusHistory] = useState<Record<number, Array<{ ts: number; status: string; detail?: string }>>>({})
+  const [agentTeams, setAgentTeams] = useState<Record<number, string>>({})
+  const [agentCliTypes, setAgentCliTypes] = useState<Record<number, string>>({})
+  const [lanPeers, setLanPeers] = useState<Array<{ name: string; host: string; port: number; agentCount: number }>>([])
 
   const layoutReadyRef = useRef(false)
   const pendingAgentsRef = useRef<Array<{ id: number; palette?: number; hueShift?: number; seatId?: string }>>([])
@@ -578,6 +681,8 @@ export function useExtensionMessages(
       pendingAgentsRef,
       isEditDirty,
       onLayoutLoaded,
+      onZoomLoaded,
+      onUiScaleLoaded,
       setAgents,
       setSelectedAgent,
       setAgentTools,
@@ -596,6 +701,11 @@ export function useExtensionMessages(
       setBuilding,
       setFloorSummaries,
       setChatMessages,
+      setAgentGitBranches,
+      setAgentStatusHistory,
+      setAgentTeams,
+      setAgentCliTypes,
+      setLanPeers,
     }
 
     const handler = (data: unknown) => {
@@ -611,5 +721,5 @@ export function useExtensionMessages(
     return unsub
   }, [getOfficeState])
 
-  return { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, excludedProjects, projectDirs, currentFloorId, building, floorSummaries, chatMessages }
+  return { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, excludedProjects, projectDirs, currentFloorId, building, floorSummaries, chatMessages, agentGitBranches, agentStatusHistory, agentTeams, agentCliTypes, lanPeers }
 }

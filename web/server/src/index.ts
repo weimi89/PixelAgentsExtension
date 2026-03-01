@@ -21,6 +21,7 @@ import type { LoadedAssets, LoadedFloorTiles, LoadedWallTiles, LoadedCharacterSp
 import { loadBuildingConfig, loadFloorLayout, writeFloorLayout, addFloor as addBuildingFloor, removeFloor as removeBuildingFloor, renameFloor as renameBuildingFloor } from './buildingPersistence.js';
 import { closeAgent, removeAgent, sendExistingAgents, getAllProjectDirs, getProjectDirPath, resumeSession, recoverTmuxAgents, checkTmuxHealth, savePersistedAgents } from './agentManager.js';
 import { setCustomName, addExcludedProject, removeExcludedProject, readExcludedProjects } from './projectNameStore.js';
+import { setTeamName } from './teamNameStore.js';
 import { scanAllSessions } from './sessionScanner.js';
 import { ensureProjectScan } from './fileWatcher.js';
 import {
@@ -39,6 +40,21 @@ import { isDemoEnabled, startDemoMode, stopDemoMode } from './demoMode.js';
 import { initAuthRoutes } from './auth/routes.js';
 import { setupAgentNodeNamespace } from './agentNodeHandler.js';
 import { loadDashboardStats, getDashboardStats, flushDashboardStats } from './dashboardStats.js';
+import { startLanDiscovery, stopLanDiscovery, getLanPeers, isLanDiscoveryRunning } from './lanDiscovery.js';
+import { LAN_DISCOVERY_HEARTBEAT_MS } from './constants.js';
+import { WebSocketServer } from 'ws';
+import type { WebSocket } from 'ws';
+import { createTerminalPty, trackPty, cleanupAllTerminals } from './terminalManager.js';
+import { TERMINAL_WS_PATH } from './constants.js';
+import { registerAdapter } from './cliAdapters/index.js';
+import { claudeAdapter } from './cliAdapters/claudeAdapter.js';
+import { codexAdapter } from './cliAdapters/codexAdapter.js';
+import { geminiAdapter } from './cliAdapters/geminiAdapter.js';
+
+// 註冊 CLI 適配器
+registerAdapter(claudeAdapter);
+registerAdapter(codexAdapter);
+registerAdapter(geminiAdapter);
 
 // ── 狀態 ────────────────────────────────────────────────────
 
@@ -64,6 +80,12 @@ const socketNicknames = new Map<string, string>();
 /** socketId → 上次聊天訊息時間戳（速率限制） */
 const socketChatLastTs = new Map<string, number>();
 let nextNicknameCounter = 1;
+
+// ── LAN 自動發現狀態 ────────────────────────────────────────
+let lanPeerName = os.hostname();
+let lanPeerBroadcastTimer: ReturnType<typeof setInterval> | null = null;
+/** 上一次廣播的 peers JSON（用於偵測變更） */
+let lastLanPeersJson = '';
 
 // 已載入的素材（啟動時快取）
 let cachedCharSprites: LoadedCharacterSprites | null = null;
@@ -153,6 +175,7 @@ const ctx: AgentContext = {
 	floorSender: () => ({ postMessage() {} }), // 佔位，main() 中替換
 	broadcastFloorSummaries: () => {}, // 佔位，main() 中替換
 	remoteAgentMap: new Map(),
+	progressExtensions: new Map(),
 };
 
 // ── tmux 健康檢查 ───────────────────────────────────────
@@ -292,11 +315,65 @@ async function main(): Promise<void> {
 		});
 	});
 
+	// ── 終端 WebSocket 伺服器 ──────────────────────────────────
+	const terminalWss = new WebSocketServer({ noServer: true });
+
+	httpServer.on('upgrade', (request, socket, head) => {
+		if (request.url?.startsWith(TERMINAL_WS_PATH)) {
+			terminalWss.handleUpgrade(request, socket, head, (ws) => {
+				terminalWss.emit('connection', ws, request);
+			});
+		}
+		// 其他路徑（如 /socket.io/）由 Socket.IO 自己處理
+	});
+
+	terminalWss.on('connection', (ws: WebSocket) => {
+		handleTerminalConnection(ws);
+	});
+
 	httpServer.listen(port, () => {
 		console.log(`\n  Pixel Agents Web running at http://localhost:${port}\n`);
 	});
 
+	// LAN 自動發現（opt-in）
+	const settings = readJsonFile<Record<string, unknown>>(getSettingsPath(), {});
+	if (settings.lanDiscoveryEnabled) {
+		startLanDiscovery(port, () => lanPeerName, () => agents.size);
+		startLanPeerBroadcast(io);
+	}
+	// 從設定中恢復 peer 名稱
+	if (typeof settings.lanPeerName === 'string' && settings.lanPeerName) {
+		lanPeerName = settings.lanPeerName;
+	}
+
 	setupGracefulShutdown(httpServer, io);
+}
+
+/** 定期檢查 LAN peers 變更並廣播至所有客戶端 */
+function startLanPeerBroadcast(io: Server): void {
+	if (lanPeerBroadcastTimer) return;
+	lanPeerBroadcastTimer = setInterval(() => {
+		if (!isLanDiscoveryRunning()) return;
+		const peers = getLanPeers().map((p) => ({
+			name: p.name,
+			host: p.host,
+			port: p.port,
+			agentCount: p.agentCount,
+		}));
+		const json = JSON.stringify(peers);
+		if (json !== lastLanPeersJson) {
+			lastLanPeersJson = json;
+			io.emit('message', { type: 'lanPeers', peers });
+		}
+	}, LAN_DISCOVERY_HEARTBEAT_MS);
+}
+
+function stopLanPeerBroadcast(): void {
+	if (lanPeerBroadcastTimer) {
+		clearInterval(lanPeerBroadcastTimer);
+		lanPeerBroadcastTimer = null;
+	}
+	lastLanPeersJson = '';
 }
 
 function setupGracefulShutdown(
@@ -319,6 +396,9 @@ function setupGracefulShutdown(
 			tmuxHealthTimer = null;
 		}
 		if (isDemoEnabled()) stopDemoMode();
+		stopLanDiscovery();
+		stopLanPeerBroadcast();
+		cleanupAllTerminals();
 
 		// 代理資源（不終止 tmux — 保留供下次恢復）
 		for (const [agentId, agent] of agents) {
@@ -357,6 +437,107 @@ function setupGracefulShutdown(
 	}
 	process.on('SIGINT', () => shutdown('SIGINT'));
 	process.on('SIGTERM', () => shutdown('SIGTERM'));
+}
+
+/** 處理終端 WebSocket 連線 — 每個連線對應一個 pty 實例 */
+function handleTerminalConnection(ws: WebSocket): void {
+	let pty: import('node-pty').IPty | null = null;
+	let attachedAgentId: number | null = null;
+
+	ws.on('message', (raw) => {
+		// 所有客戶端→伺服器訊息皆為 JSON 文字
+		let msg: { type: string; agentId?: number; data?: string; cols?: number; rows?: number };
+		try {
+			msg = JSON.parse(raw.toString());
+		} catch {
+			return;
+		}
+
+		switch (msg.type) {
+			case 'attach': {
+				if (pty) {
+					// 已有 pty，先清除
+					pty.kill();
+					pty = null;
+				}
+				const agentId = msg.agentId;
+				if (agentId === undefined) {
+					ws.send(JSON.stringify({ type: 'error', message: 'Missing agentId' }));
+					return;
+				}
+				const agent = agents.get(agentId);
+				if (!agent) {
+					ws.send(JSON.stringify({ type: 'error', message: 'Agent not found' }));
+					return;
+				}
+				if (agent.isRemote) {
+					ws.send(JSON.stringify({ type: 'error', message: 'Remote agents do not support terminal' }));
+					return;
+				}
+				if (!agent.tmuxSessionName) {
+					ws.send(JSON.stringify({ type: 'error', message: 'Agent has no tmux session' }));
+					return;
+				}
+				const newPty = createTerminalPty(agent.tmuxSessionName, msg.cols, msg.rows);
+				if (!newPty) {
+					ws.send(JSON.stringify({ type: 'error', message: 'Failed to create terminal' }));
+					return;
+				}
+				pty = newPty;
+				attachedAgentId = agentId;
+				trackPty(newPty);
+
+				newPty.onData((data: string) => {
+					if (ws.readyState === 1 /* WebSocket.OPEN */) {
+						ws.send(Buffer.from(data, 'utf-8'));
+					}
+				});
+				newPty.onExit(({ exitCode }) => {
+					if (ws.readyState === 1) {
+						ws.send(JSON.stringify({ type: 'exit', code: exitCode }));
+					}
+					pty = null;
+					attachedAgentId = null;
+				});
+
+				ws.send(JSON.stringify({ type: 'attached', agentId }));
+				console.log(`[Pixel Agents] Terminal attached to agent ${agentId} (tmux: ${agent.tmuxSessionName})`);
+				break;
+			}
+			case 'input': {
+				if (pty && typeof msg.data === 'string') {
+					pty.write(msg.data);
+				}
+				break;
+			}
+			case 'resize': {
+				if (pty && typeof msg.cols === 'number' && typeof msg.rows === 'number') {
+					pty.resize(Math.max(1, msg.cols), Math.max(1, msg.rows));
+				}
+				break;
+			}
+			case 'detach': {
+				if (pty) {
+					pty.kill();
+					pty = null;
+				}
+				attachedAgentId = null;
+				ws.send(JSON.stringify({ type: 'detached' }));
+				break;
+			}
+		}
+	});
+
+	ws.on('close', () => {
+		if (pty) {
+			pty.kill();
+			pty = null;
+		}
+		if (attachedAgentId !== null) {
+			console.log(`[Pixel Agents] Terminal disconnected from agent ${attachedAgentId}`);
+		}
+		attachedAgentId = null;
+	});
 }
 
 function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?: import('socket.io').Socket): void {
@@ -403,8 +584,14 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			sender.postMessage({ type: 'layoutLoaded', layout });
 
 			// 傳送設定
-			const settings = readJsonFile<{ soundEnabled?: boolean }>(getSettingsPath(), {});
-			sender.postMessage({ type: 'settingsLoaded', soundEnabled: settings.soundEnabled ?? true });
+			const wvSettings = readJsonFile<{ soundEnabled?: boolean; zoom?: number; soundConfig?: { master?: boolean; waiting?: boolean; permission?: boolean; turnComplete?: boolean }; uiScale?: number; lanDiscoveryEnabled?: boolean; lanPeerName?: string }>(getSettingsPath(), {});
+			sender.postMessage({ type: 'settingsLoaded', soundEnabled: wvSettings.soundEnabled ?? true, zoom: wvSettings.zoom, soundConfig: wvSettings.soundConfig, uiScale: wvSettings.uiScale, lanDiscoveryEnabled: wvSettings.lanDiscoveryEnabled ?? false, lanPeerName: wvSettings.lanPeerName ?? lanPeerName });
+
+			// 傳送目前的 LAN peers（若已啟用）
+			if (isLanDiscoveryRunning()) {
+				const peers = getLanPeers().map((p) => ({ name: p.name, host: p.host, port: p.port, agentCount: p.agentCount }));
+				sender.postMessage({ type: 'lanPeers', peers });
+			}
 
 			// 傳送當前樓層的現有代理
 			const agentMeta = readJsonFile<Record<string, { palette?: number; hueShift?: number; seatId?: string }>>(
@@ -470,6 +657,24 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 		case 'setSoundEnabled': {
 			const current = readJsonFile<Record<string, unknown>>(getSettingsPath(), {});
 			current.soundEnabled = msg.enabled;
+			writeJsonFile(getSettingsPath(), current);
+			break;
+		}
+		case 'setSoundConfig': {
+			const current = readJsonFile<Record<string, unknown>>(getSettingsPath(), {});
+			current.soundConfig = msg.config;
+			writeJsonFile(getSettingsPath(), current);
+			break;
+		}
+		case 'setUiScale': {
+			const current = readJsonFile<Record<string, unknown>>(getSettingsPath(), {});
+			current.uiScale = msg.scale;
+			writeJsonFile(getSettingsPath(), current);
+			break;
+		}
+		case 'setZoom': {
+			const current = readJsonFile<Record<string, unknown>>(getSettingsPath(), {});
+			current.zoom = msg.zoom;
 			writeJsonFile(getSettingsPath(), current);
 			break;
 		}
@@ -650,6 +855,82 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			});
 			ctx.broadcastFloorSummaries();
 			console.log(`[Pixel Agents] Agent ${msg.agentId} transferred from ${oldFloorId} to ${msg.targetFloorId}`);
+			break;
+		}
+		case 'requestStatusHistory': {
+			const agent = agents.get(msg.agentId);
+			if (agent) {
+				sender.postMessage({
+					type: 'statusHistory',
+					id: msg.agentId,
+					history: agent.statusHistory,
+				});
+			}
+			break;
+		}
+		case 'setAgentTeam': {
+			const agent = agents.get(msg.agentId);
+			if (agent) {
+				agent.teamName = msg.teamName;
+				// 持久化團隊名稱（以專案目錄為鍵）
+				if (agent.projectDir) {
+					setTeamName(agent.projectDir, msg.teamName);
+				}
+				// 廣播至同樓層的所有客戶端
+				ctx.floorSender(agent.floorId).postMessage({
+					type: 'agentTeam',
+					id: msg.agentId,
+					teamName: msg.teamName,
+				});
+			}
+			break;
+		}
+		case 'setLanDiscoveryEnabled': {
+			const current = readJsonFile<Record<string, unknown>>(getSettingsPath(), {});
+			current.lanDiscoveryEnabled = msg.enabled;
+			writeJsonFile(getSettingsPath(), current);
+			const httpPort = parseInt(process.env['PORT'] || String(DEFAULT_PORT), 10);
+			if (msg.enabled && !isLanDiscoveryRunning()) {
+				startLanDiscovery(httpPort, () => lanPeerName, () => agents.size);
+				// 需要從 handleClientMessage 的作用域取得 io — 透過 ctx.sender 廣播
+				// 啟動 peer 廣播計時器：由於 io 不在 handleClientMessage 作用域中，
+				// 我們在 main() 中統一管理。這裡僅發送啟動訊號。
+				// 為了讓 peer 廣播在啟用後運作，在 webviewReady 已有初始化邏輯，
+				// 這裡需要另一種方式啟動計時器。
+				// 解決方案：將 io 放入 ctx 或使用全域函式。
+				// 這裡使用簡單的全域函式重新啟動廣播。
+				if (!lanPeerBroadcastTimer && ctx.sender) {
+					// 使用 ctx.sender 作為簡化廣播
+					lanPeerBroadcastTimer = setInterval(() => {
+						if (!isLanDiscoveryRunning()) return;
+						const peers = getLanPeers().map((p) => ({
+							name: p.name, host: p.host, port: p.port, agentCount: p.agentCount,
+						}));
+						const json = JSON.stringify(peers);
+						if (json !== lastLanPeersJson) {
+							lastLanPeersJson = json;
+							ctx.sender?.postMessage({ type: 'lanPeers', peers });
+						}
+					}, LAN_DISCOVERY_HEARTBEAT_MS);
+				}
+				console.log('[Pixel Agents] LAN discovery enabled');
+			} else if (!msg.enabled && isLanDiscoveryRunning()) {
+				stopLanDiscovery();
+				stopLanPeerBroadcast();
+				// 廣播空的 peers 清單
+				ctx.sender?.postMessage({ type: 'lanPeers', peers: [] });
+				console.log('[Pixel Agents] LAN discovery disabled');
+			}
+			break;
+		}
+		case 'setLanPeerName': {
+			const name = typeof msg.name === 'string' ? msg.name.trim().slice(0, 50) : '';
+			if (name) {
+				lanPeerName = name;
+				const current = readJsonFile<Record<string, unknown>>(getSettingsPath(), {});
+				current.lanPeerName = name;
+				writeJsonFile(getSettingsPath(), current);
+			}
 			break;
 		}
 		case 'requestDashboardData': {

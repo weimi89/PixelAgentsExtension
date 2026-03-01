@@ -148,6 +148,7 @@ export const FurnitureType = {
   LOCKER: 'locker',
   COAT_RACK: 'coat_rack',
   POTTED_CACTUS: 'potted_cactus',
+  PIXEL_TEXT: 'pixel_text',
 } as const
 export type FurnitureType = (typeof FurnitureType)[keyof typeof FurnitureType]
 
@@ -178,6 +179,8 @@ export interface FurnitureCatalogEntry {
   backgroundTiles?: number
   /** 此項目是否可放置在牆磚上 */
   canPlaceOnWalls?: boolean
+  /** 此項目是否為像素文字（動態精靈圖） */
+  isPixelText?: boolean
 }
 
 export interface PlacedFurniture {
@@ -187,6 +190,8 @@ export interface PlacedFurniture {
   row: number
   /** 家具的選用色彩覆寫 */
   color?: FloorColor
+  /** 像素文字家具的自訂文字 */
+  text?: string
 }
 
 export interface OfficeLayout {
@@ -278,4 +283,8 @@ export interface Character {
   meetingTableUid: string | null
   /** 跨樓層轉移目標，或 null */
   transferTargetFloor: string | null
+  /** 此角色所屬的團隊名稱 */
+  teamName: string | null
+  /** 此角色的團隊顏色（從 TEAM_COLORS 陣列分配） */
+  teamColor: string | null
 }

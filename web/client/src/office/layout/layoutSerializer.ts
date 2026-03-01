@@ -1,6 +1,6 @@
 import { TileType, FurnitureType, DEFAULT_COLS, DEFAULT_ROWS, TILE_SIZE, Direction } from '../types.js'
 import type { TileType as TileTypeVal, OfficeLayout, PlacedFurniture, Seat, FurnitureInstance, FloorColor } from '../types.js'
-import { getCatalogEntry } from './furnitureCatalog.js'
+import { getCatalogEntry, getPixelTextEntry } from './furnitureCatalog.js'
 import { getColorizedSprite } from '../colorize.js'
 
 /** 將佈局的平面磚塊陣列轉換為二維網格 */
@@ -35,7 +35,10 @@ export function layoutToFurnitureInstances(furniture: PlacedFurniture[]): Furnit
 
   const instances: FurnitureInstance[] = []
   for (const item of furniture) {
-    const entry = getCatalogEntry(item.type)
+    // 像素文字家具使用動態精靈圖
+    const entry = item.text !== undefined
+      ? getPixelTextEntry(item.text)
+      : getCatalogEntry(item.type)
     if (!entry) continue
     const x = item.col * TILE_SIZE
     const y = item.row * TILE_SIZE
@@ -69,7 +72,10 @@ export function layoutToFurnitureInstances(furniture: PlacedFurniture[]): Furnit
     let sprite = entry.sprite
     if (item.color) {
       const { h, s, b: bv, c: cv } = item.color
-      sprite = getColorizedSprite(`furn-${item.type}-${h}-${s}-${bv}-${cv}-${item.color.colorize ? 1 : 0}`, entry.sprite, item.color)
+      const cacheKey = item.text !== undefined
+        ? `furn-pixtext-${item.text}-${h}-${s}-${bv}-${cv}-${item.color.colorize ? 1 : 0}`
+        : `furn-${item.type}-${h}-${s}-${bv}-${cv}-${item.color.colorize ? 1 : 0}`
+      sprite = getColorizedSprite(cacheKey, entry.sprite, item.color)
     }
 
     instances.push({ sprite, x, y, zY })

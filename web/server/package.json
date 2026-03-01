@@ -14,9 +14,11 @@
     "bcryptjs": "^2.4.3",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
+    "node-pty": "^1.1.0",
     "pixel-agents-shared": "*",
     "pngjs": "^7.0.0",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -25,6 +27,7 @@
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.15.0",
     "@types/pngjs": "^6.0.5",
+    "@types/ws": "^8.18.1",
     "eslint": "^10.0.2",
     "globals": "^17.3.0",
     "tsx": "^4.21.0",

@@ -49,6 +49,14 @@ export interface AgentState {
 	owner: string | null;
 	/** 遠端代理的來源 sessionId（用於 Agent Node 事件對應） */
 	remoteSessionId: string | null;
+	/** 從 JSONL 偵測到的 git 分支名稱 */
+	gitBranch: string | null;
+	/** 最近 N 筆狀態變更歷史（FIFO，最多 MAX_STATUS_HISTORY 條） */
+	statusHistory: Array<{ ts: number; status: string; detail?: string }>;
+	/** 此代理的團隊名稱（手動設定或自動偵測） */
+	teamName: string | null;
+	/** 此代理的 CLI 類型（claude/codex/gemini） */
+	cliType: string;
 }
 
 export interface PersistedAgent {
@@ -61,6 +69,7 @@ export interface PersistedAgent {
 	seatId?: string;
 	tmuxSessionName?: string;
 	floorId?: FloorId;
+	cliType?: string;
 }
 
 /** 客戶端 → 伺服器的 Socket.IO 訊息型別 */
@@ -71,6 +80,8 @@ export type ClientMessage =
 	| { type: 'saveAgentSeats'; seats: Record<number, { palette: number; hueShift: number; seatId: string | null }> }
 	| { type: 'saveLayout'; layout: Record<string, unknown> }
 	| { type: 'setSoundEnabled'; enabled: boolean }
+	| { type: 'setSoundConfig'; config: { master?: boolean; waiting?: boolean; permission?: boolean; turnComplete?: boolean } }
+	| { type: 'setUiScale'; scale: number }
 	| { type: 'listSessions' }
 	| { type: 'resumeSession'; sessionId: string; projectDir: string }
 	| { type: 'requestExportLayout' }
@@ -86,7 +97,12 @@ export type ClientMessage =
 	| { type: 'chatMessage'; text: string }
 	| { type: 'setNickname'; nickname: string }
 	| { type: 'moveAgentToFloor'; agentId: number; targetFloorId: FloorId }
-	| { type: 'requestDashboardData' };
+	| { type: 'requestDashboardData' }
+	| { type: 'setZoom'; zoom: number }
+	| { type: 'requestStatusHistory'; agentId: number }
+	| { type: 'setAgentTeam'; agentId: number; teamName: string | null }
+	| { type: 'setLanDiscoveryEnabled'; enabled: boolean }
+	| { type: 'setLanPeerName'; name: string };
 
 /** 代理上下文 — 集中管理所有共享狀態與計時器，避免函式傳遞大量參數 */
 export interface AgentContext {
@@ -115,4 +131,6 @@ export interface AgentContext {
 	broadcastFloorSummaries: () => void;
 	/** remoteSessionId → agentId 的映射（供 Agent Node 事件快速查找） */
 	remoteAgentMap: Map<string, number>;
+	/** agentId → 進度訊號延長計時器次數（用於自適應權限偵測，限制最多 N 次） */
+	progressExtensions: Map<number, number>;
 }

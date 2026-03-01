@@ -27,6 +27,12 @@ interface ToolOverlayProps {
   remoteAgents: Record<number, { owner: string }>
   /** agentId → 轉錄記錄陣列 */
   agentTranscripts: Record<number, TranscriptEntry[]>
+  /** agentId → git 分支名稱 */
+  agentGitBranches?: Record<number, string>
+  /** agentId → 團隊名稱 */
+  agentTeams?: Record<number, string>
+  /** agentId → CLI 類型 */
+  agentCliTypes?: Record<number, string>
 }
 
 /** 格式化秒數為人類可讀字串 */
@@ -113,6 +119,9 @@ export function ToolOverlay({
   agentProjects,
   remoteAgents,
   agentTranscripts,
+  agentGitBranches,
+  agentTeams,
+  agentCliTypes,
 }: ToolOverlayProps) {
   useRenderTick()
 
@@ -319,6 +328,48 @@ export function ToolOverlay({
                   </button>
                 )}
               </div>
+              {/* Git Branch（僅非子代理且有分支時） */}
+              {!isSub && agentGitBranches?.[id] && (
+                <span
+                  style={{
+                    fontSize: '14px',
+                    color: 'var(--pixel-tool-search)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    marginLeft: dotColor ? 10 : 0,
+                  }}
+                >
+                  {agentGitBranches[id]}
+                </span>
+              )}
+              {/* Team（僅非子代理且有團隊時） */}
+              {!isSub && agentTeams?.[id] && (
+                <span
+                  style={{
+                    fontSize: '14px',
+                    color: 'var(--pixel-tool-task)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    marginLeft: dotColor ? 10 : 0,
+                  }}
+                >
+                  {t.team}: {agentTeams[id]}
+                </span>
+              )}
+              {/* CLI type（僅非 claude 且非子代理時） */}
+              {!isSub && agentCliTypes?.[id] && (
+                <span
+                  style={{
+                    fontSize: '12px',
+                    color: 'var(--pixel-accent)',
+                    padding: '0 4px',
+                    border: '1px solid var(--pixel-accent)',
+                    marginLeft: 4,
+                  }}
+                >
+                  {agentCliTypes[id].toUpperCase()}
+                </span>
+              )}
               {/* 第二行：活動狀態 */}
               <span
                 style={{

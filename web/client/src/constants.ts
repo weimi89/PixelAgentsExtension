@@ -85,6 +85,19 @@ export const ZOOM_LEVEL_FADE_DURATION_SEC = 0.5
 export const ZOOM_SCROLL_THRESHOLD = 50
 export const PAN_MARGIN_FRACTION = 0.25
 
+// ── 迷你地圖 ────────────────────────────────────────────────
+export const MINIMAP_MARGIN = 10
+export const MINIMAP_BG_ALPHA = 0.85
+export const MINIMAP_MIN_SIZE = 80
+export const MINIMAP_MAX_SIZE = 160
+export const MINIMAP_TILE_MIN_PX = 3
+export const MINIMAP_DOT_SIZE = 3
+export const MINIMAP_VIEWPORT_STROKE = 'rgba(255,255,255,0.7)'
+export const MINIMAP_BG_COLOR = 'rgba(15,15,25,0.85)'
+export const MINIMAP_FLOOR_COLOR = '#3a3a52'
+export const MINIMAP_WALL_COLOR = '#5a5a72'
+export const MINIMAP_FURNITURE_COLOR = '#4a4a5e'
+
 // ── 編輯器 ──────────────────────────────────────────────────
 export const UNDO_STACK_MAX_SIZE = 50
 export const LAYOUT_SAVE_DEBOUNCE_MS = 500
@@ -99,6 +112,12 @@ export const NOTIFICATION_NOTE_1_START_SEC = 0
 export const NOTIFICATION_NOTE_2_START_SEC = 0.1
 export const NOTIFICATION_NOTE_DURATION_SEC = 0.18
 export const NOTIFICATION_VOLUME = 0.14
+
+// 權限音效（下行雙音：D5 → A4）
+export const PERMISSION_NOTE_1_HZ = 587.33     // D5
+export const PERMISSION_NOTE_2_HZ = 440.00     // A4
+// 回合完成音效（單音：G5）
+export const TURN_COMPLETE_NOTE_HZ = 783.99    // G5
 
 // ── 遊戲邏輯 ────────────────────────────────────────────────
 export const MAX_DELTA_TIME_SEC = 0.1
@@ -192,3 +211,20 @@ export const LONG_PRESS_DURATION_MS = 500
 // ── 快取限制 ────────────────────────────────────────────────
 export const COLORIZE_CACHE_MAX_SIZE = 256
 export const SPRITE_CACHE_MAX_ZOOM_LEVELS = 12
+
+// ── 團隊視覺化 ────────────────────────────────────────────────
+export const TEAM_COLORS = [
+  '#ff6b6b', // 紅
+  '#4ecdc4', // 青
+  '#45b7d1', // 藍
+  '#f9ca24', // 黃
+  '#a29bfe', // 紫
+  '#fd79a8', // 粉
+  '#00b894', // 綠
+  '#e17055', // 橘
+] as const
+export const TEAM_BADGE_SIZE = 5
+export const TEAM_BADGE_VERTICAL_OFFSET_PX = 30
+export const TEAM_CONNECTION_LINE_ALPHA = 0.3
+export const TEAM_CONNECTION_LINE_WIDTH = 1
+export const TEAM_CONNECTION_DASH: [number, number] = [3, 3]
