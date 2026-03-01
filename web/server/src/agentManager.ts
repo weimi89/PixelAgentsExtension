@@ -218,12 +218,14 @@ function spawnClaudeAgent(
 			console.error(`[Pixel Agents] Agent ${id}: process error:`, err);
 			removeAgent(id, ctx);
 			ctx.floorSender(agent.floorId).postMessage({ type: 'agentClosed', id });
+			ctx.broadcastFloorSummaries();
 		});
 
 		proc.on('exit', (code) => {
 			console.log(`[Pixel Agents] Agent ${id}: process exited with code ${code}`);
 			removeAgent(id, ctx);
 			ctx.floorSender(agent.floorId).postMessage({ type: 'agentClosed', id });
+			ctx.broadcastFloorSummaries();
 		});
 	}
 
@@ -240,6 +242,8 @@ function spawnClaudeAgent(
 		floorId,
 		...(isExternal ? { isExternal: true } : {}),
 	});
+
+	ctx.broadcastFloorSummaries();
 
 	// 輪詢等待 JSONL 檔案出現後開始檔案監視（含超時防護）
 	const pollStartTime = Date.now();
@@ -341,6 +345,7 @@ export function closeAgent(
 
 	removeAgent(agentId, ctx);
 	ctx.floorSender(floorId).postMessage({ type: 'agentClosed', id: agentId });
+	ctx.broadcastFloorSummaries();
 }
 
 // ── 伺服器重啟時的 tmux 恢復 ─────────────────────────
@@ -444,6 +449,7 @@ export function checkTmuxHealth(
 ): void {
 	const { agents } = ctx;
 
+	let removed = false;
 	for (const [agentId, agent] of agents) {
 		if (!agent.tmuxSessionName) continue;
 		if (!isTmuxSessionAlive(agent.tmuxSessionName)) {
@@ -451,7 +457,11 @@ export function checkTmuxHealth(
 			const floorId = agent.floorId;
 			removeAgent(agentId, ctx);
 			ctx.floorSender(floorId).postMessage({ type: 'agentClosed', id: agentId });
+			removed = true;
 		}
+	}
+	if (removed) {
+		ctx.broadcastFloorSummaries();
 	}
 }
 

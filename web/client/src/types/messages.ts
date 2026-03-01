@@ -39,6 +39,12 @@ interface CharacterSpriteDirections {
   right: string[][][]
 }
 
+/** 樓層代理數量摘要 */
+export interface FloorSummary {
+  floorId: string
+  agentCount: number
+}
+
 /** 伺服器 → 客戶端訊息的 discriminated union */
 export type ServerMessage =
   | { type: 'layoutLoaded'; layout: OfficeLayout | null }
@@ -73,3 +79,4 @@ export type ServerMessage =
   | { type: 'projectDirsList'; dirs: { name: string; excluded: boolean }[] }
   | { type: 'buildingConfig'; building: BuildingConfig }
   | { type: 'floorSwitched'; floorId: string }
+  | { type: 'floorSummaries'; summaries: FloorSummary[] }

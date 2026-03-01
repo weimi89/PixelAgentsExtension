@@ -115,4 +115,12 @@ export const t = {
   addFloor: '新增樓層',
   removeFloor: '移除樓層',
   renameFloor: '重新命名',
+
+  // 大樓面板
+  building: '大樓',
+  buildingPanel: '大樓面板',
+  floorAgentCount: (n: number) => `${n} 個代理`,
+  newFloorName: '新樓層',
+  deleteFloorConfirm: '確定移除此樓層？',
+  cannotDeleteLastFloor: '無法移除唯一的樓層',
 } as const

@@ -15,6 +15,7 @@ import { BottomToolbar } from './components/BottomToolbar.js'
 import { DebugView } from './components/DebugView.js'
 import { AgentLabels } from './components/AgentLabels.js'
 import { SessionPicker } from './components/SessionPicker.js'
+import { BuildingView } from './components/BuildingView.js'
 import type { SessionInfo } from './components/SessionPicker.js'
 import type { ServerMessage } from './types/messages.js'
 import { t } from './i18n.js'
@@ -125,9 +126,10 @@ function App() {
 
   const isEditDirty = useCallback(() => editor.isEditMode && editor.isDirty, [editor.isEditMode, editor.isDirty])
 
-  const { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, agentTranscripts, projectDirs, currentFloorId, building } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
+  const { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, agentTranscripts, projectDirs, currentFloorId, building, floorSummaries } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
 
   const [isDebugMode, setIsDebugMode] = useState(false)
+  const [isBuildingViewOpen, setIsBuildingViewOpen] = useState(false)
   const [isSessionPickerOpen, setIsSessionPickerOpen] = useState(false)
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [isLoadingSessions, setIsLoadingSessions] = useState(false)
@@ -138,6 +140,7 @@ function App() {
   }, [])
 
   const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), [])
+  const handleToggleBuildingView = useCallback(() => setIsBuildingViewOpen((prev) => !prev), [])
 
   const handleSwitchFloor = useCallback((floorId: string) => {
     vscode.postMessage({ type: 'switchFloor', floorId })
@@ -256,22 +259,29 @@ function App() {
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
-      <OfficeCanvas
-        officeState={officeState}
-        onClick={handleClick}
-        isEditMode={editor.isEditMode}
-        editorState={editorState}
-        onEditorTileAction={editor.handleEditorTileAction}
-        onEditorEraseAction={editor.handleEditorEraseAction}
-        onEditorSelectionChange={editor.handleEditorSelectionChange}
-        onDeleteSelected={editor.handleDeleteSelected}
-        onRotateSelected={editor.handleRotateSelected}
-        onDragMove={editor.handleDragMove}
-        editorTick={editor.editorTick}
-        zoom={editor.zoom}
-        onZoomChange={editor.handleZoomChange}
-        panRef={editor.panRef}
-      />
+      <div style={{
+        opacity: layoutReady ? 1 : 0,
+        transition: 'opacity 0.2s ease-in-out',
+        width: '100%',
+        height: '100%',
+      }}>
+        <OfficeCanvas
+          officeState={officeState}
+          onClick={handleClick}
+          isEditMode={editor.isEditMode}
+          editorState={editorState}
+          onEditorTileAction={editor.handleEditorTileAction}
+          onEditorEraseAction={editor.handleEditorEraseAction}
+          onEditorSelectionChange={editor.handleEditorSelectionChange}
+          onDeleteSelected={editor.handleDeleteSelected}
+          onRotateSelected={editor.handleRotateSelected}
+          onDragMove={editor.handleDragMove}
+          editorTick={editor.editorTick}
+          zoom={editor.zoom}
+          onZoomChange={editor.handleZoomChange}
+          panRef={editor.panRef}
+        />
+      </div>
 
       <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
 
@@ -328,6 +338,8 @@ function App() {
         floors={building?.floors ?? []}
         currentFloorId={currentFloorId}
         onSwitchFloor={handleSwitchFloor}
+        isBuildingViewOpen={isBuildingViewOpen}
+        onToggleBuildingView={handleToggleBuildingView}
       />
 
       <SessionPicker
@@ -339,6 +351,15 @@ function App() {
         projectDirs={projectDirs}
         onExcludeProject={handleExcludeProject}
         onIncludeProject={handleIncludeProject}
+      />
+
+      <BuildingView
+        isOpen={isBuildingViewOpen}
+        onClose={() => setIsBuildingViewOpen(false)}
+        floors={building?.floors ?? []}
+        currentFloorId={currentFloorId}
+        floorSummaries={floorSummaries}
+        onSwitchFloor={handleSwitchFloor}
       />
 
       {editor.isEditMode && editor.isDirty && (

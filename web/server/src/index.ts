@@ -136,6 +136,7 @@ const ctx: AgentContext = {
 	socketFloors,
 	building,
 	floorSender: () => ({ postMessage() {} }), // 佔位，main() 中替換
+	broadcastFloorSummaries: () => {}, // 佔位，main() 中替換
 };
 
 // ── tmux 健康檢查 ───────────────────────────────────────
@@ -218,6 +219,19 @@ async function main(): Promise<void> {
 			io.to(`floor:${floorId}`).emit('message', msg);
 		},
 	});
+
+	// 各樓層代理數量摘要廣播
+	ctx.broadcastFloorSummaries = () => {
+		const counts = new Map<string, number>();
+		for (const agent of agents.values()) {
+			counts.set(agent.floorId, (counts.get(agent.floorId) || 0) + 1);
+		}
+		const summaries = ctx.building.floors.map((f) => ({
+			floorId: f.id,
+			agentCount: counts.get(f.id) || 0,
+		}));
+		ctx.sender?.postMessage({ type: 'floorSummaries', summaries });
+	};
 
 	// Socket.IO 連線處理器
 	io.on('connection', (socket) => {
@@ -370,6 +384,9 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			// 傳送排除專案清單
 			sender.postMessage({ type: 'excludedProjectsUpdated', excluded: readExcludedProjects() });
 
+			// 傳送各樓層代理數量摘要
+			ctx.broadcastFloorSummaries();
+
 			// 演示模式或真實的自動偵測
 			if (isDemoEnabled()) {
 				const demoCount = parseInt(process.env['DEMO_AGENTS'] || '3', 10);
@@ -512,6 +529,7 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			const newFloor = addBuildingFloor(ctx.building, msg.name);
 			console.log(`[Pixel Agents] Added floor: ${newFloor.id} "${newFloor.name}"`);
 			ctx.sender?.postMessage({ type: 'buildingConfig', building: ctx.building });
+			ctx.broadcastFloorSummaries();
 			break;
 		}
 		case 'removeFloor': {
@@ -519,6 +537,7 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			if (removed) {
 				console.log(`[Pixel Agents] Removed floor: ${msg.floorId}`);
 				ctx.sender?.postMessage({ type: 'buildingConfig', building: ctx.building });
+				ctx.broadcastFloorSummaries();
 			}
 			break;
 		}

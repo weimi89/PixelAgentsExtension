@@ -66,6 +66,8 @@ export interface ExtensionMessageState {
   currentFloorId: string | null
   /** 建築物配置 */
   building: BuildingConfig | null
+  /** 各樓層代理數量摘要（floorId → agentCount） */
+  floorSummaries: Record<string, number>
 }
 
 /** 轉錄記錄條目 */
@@ -107,6 +109,7 @@ interface HandlerContext {
   setProjectDirs: React.Dispatch<React.SetStateAction<{ name: string; excluded: boolean }[]>>
   setCurrentFloorId: React.Dispatch<React.SetStateAction<string | null>>
   setBuilding: React.Dispatch<React.SetStateAction<BuildingConfig | null>>
+  setFloorSummaries: React.Dispatch<React.SetStateAction<Record<string, number>>>
 }
 
 // ── Message Handlers ───────────────────────────────────────────
@@ -417,6 +420,14 @@ function handleBuildingConfig(msg: ServerMessage & { type: 'buildingConfig' }, c
   ctx.setCurrentFloorId((prev) => prev ?? msg.building.defaultFloorId)
 }
 
+function handleFloorSummaries(msg: ServerMessage & { type: 'floorSummaries' }, ctx: HandlerContext): void {
+  const map: Record<string, number> = {}
+  for (const s of msg.summaries) {
+    map[s.floorId] = s.agentCount
+  }
+  ctx.setFloorSummaries(map)
+}
+
 function handleFloorSwitched(msg: ServerMessage & { type: 'floorSwitched' }, ctx: HandlerContext): void {
   ctx.setCurrentFloorId(msg.floorId)
   // 清空當前代理相關狀態，新樓層的資料會隨 existingAgents + layoutLoaded 到來
@@ -468,6 +479,7 @@ const messageHandlers: Record<string, HandlerFn> = {
   projectDirsList: handleProjectDirsList as HandlerFn,
   buildingConfig: handleBuildingConfig as HandlerFn,
   floorSwitched: handleFloorSwitched as HandlerFn,
+  floorSummaries: handleFloorSummaries as HandlerFn,
 }
 
 // ── Hook ────────────────────────────────────────────────────────
@@ -492,6 +504,7 @@ export function useExtensionMessages(
   const [projectDirs, setProjectDirs] = useState<{ name: string; excluded: boolean }[]>([])
   const [currentFloorId, setCurrentFloorId] = useState<string | null>(null)
   const [building, setBuilding] = useState<BuildingConfig | null>(null)
+  const [floorSummaries, setFloorSummaries] = useState<Record<string, number>>({})
 
   const layoutReadyRef = useRef(false)
   const pendingAgentsRef = useRef<Array<{ id: number; palette?: number; hueShift?: number; seatId?: string }>>([])
@@ -518,6 +531,7 @@ export function useExtensionMessages(
       setProjectDirs,
       setCurrentFloorId,
       setBuilding,
+      setFloorSummaries,
     }
 
     const handler = (data: unknown) => {
@@ -533,5 +547,5 @@ export function useExtensionMessages(
     return unsub
   }, [getOfficeState])
 
-  return { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, agentTranscripts, excludedProjects, projectDirs, currentFloorId, building }
+  return { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, agentTranscripts, excludedProjects, projectDirs, currentFloorId, building, floorSummaries }
 }

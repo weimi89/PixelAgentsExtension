@@ -101,4 +101,6 @@ export interface AgentContext {
 	building: BuildingConfig;
 	/** 取得特定樓層的 MessageSender（僅廣播至該樓層的客戶端） */
 	floorSender: (floorId: FloorId) => MessageSender;
+	/** 廣播各樓層代理數量摘要至所有客戶端 */
+	broadcastFloorSummaries: () => void;
 }

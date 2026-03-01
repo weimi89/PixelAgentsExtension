@@ -177,6 +177,9 @@ function scanAndAdopt(
 		// 立即開始監視檔案
 		startFileWatching(id, file, ctx);
 		readNewLines(id, ctx);
+
+		// 代理建立後廣播樓層摘要
+		ctx.broadcastFloorSummaries();
 	}
 
 	// 檢查過期代理（JSONL 檔案不再被寫入）
@@ -218,6 +221,9 @@ function checkStaleAgents(ctx: AgentContext): void {
 		}
 		removeAgent(id, ctx);
 		floorSend.postMessage({ type: 'agentClosed', id });
+	}
+	if (staleIds.length > 0) {
+		ctx.broadcastFloorSummaries();
 	}
 }
 
