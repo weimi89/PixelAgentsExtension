@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { LAYOUT_FILE_DIR, LAYOUT_FILE_NAME } from './constants.js';
+import { atomicWriteJson } from './atomicWrite.js';
 
 function getLayoutFilePath(): string {
 	return path.join(os.homedir(), LAYOUT_FILE_DIR, LAYOUT_FILE_NAME);
@@ -20,16 +21,8 @@ export function readLayoutFromFile(): Record<string, unknown> | null {
 }
 
 export function writeLayoutToFile(layout: Record<string, unknown>): void {
-	const filePath = getLayoutFilePath();
-	const dir = path.dirname(filePath);
 	try {
-		if (!fs.existsSync(dir)) {
-			fs.mkdirSync(dir, { recursive: true });
-		}
-		const json = JSON.stringify(layout, null, 2);
-		const tmpPath = filePath + '.tmp';
-		fs.writeFileSync(tmpPath, json, 'utf-8');
-		fs.renameSync(tmpPath, filePath);
+		atomicWriteJson(getLayoutFilePath(), layout);
 	} catch (err) {
 		console.error('[Pixel Agents] Failed to write layout file:', err);
 	}

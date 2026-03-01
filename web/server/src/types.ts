@@ -109,7 +109,6 @@ export interface AgentContext {
 	agents: Map<number, AgentState>;
 	nextAgentIdRef: { current: number };
 	activeAgentIdRef: { current: number | null };
-	knownJsonlFiles: Set<string>;
 	fileWatchers: Map<number, FSWatcher>;
 	pollingTimers: Map<number, ReturnType<typeof setInterval>>;
 	waitingTimers: Map<number, ReturnType<typeof setTimeout>>;

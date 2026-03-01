@@ -9,24 +9,10 @@ import {
 	FLOOR_LAYOUT_DIR,
 	DEFAULT_FLOOR_ID,
 } from './constants.js';
+import { atomicWriteJson } from './atomicWrite.js';
 
 const userDir = path.join(os.homedir(), LAYOUT_FILE_DIR);
 const floorsDir = path.join(userDir, FLOOR_LAYOUT_DIR);
-
-function ensureDir(dir: string): void {
-	if (!fs.existsSync(dir)) {
-		fs.mkdirSync(dir, { recursive: true });
-	}
-}
-
-/** 原子寫入 JSON 檔案（.tmp + rename） */
-function atomicWriteJson(filePath: string, data: unknown): void {
-	ensureDir(path.dirname(filePath));
-	const json = JSON.stringify(data, null, 2);
-	const tmpPath = filePath + '.tmp';
-	fs.writeFileSync(tmpPath, json, 'utf-8');
-	fs.renameSync(tmpPath, filePath);
-}
 
 function getBuildingFilePath(): string {
 	return path.join(userDir, BUILDING_FILE_NAME);
@@ -60,7 +46,6 @@ export function loadBuildingConfig(): BuildingConfig {
 	try {
 		if (fs.existsSync(oldLayoutPath)) {
 			const layout = fs.readFileSync(oldLayoutPath, 'utf-8');
-			ensureDir(floorsDir);
 			const floorPath = getFloorLayoutPath(DEFAULT_FLOOR_ID);
 			if (!fs.existsSync(floorPath)) {
 				atomicWriteJson(floorPath, JSON.parse(layout));

@@ -120,7 +120,7 @@ function scanAndAdopt(
 	projectDir: string,
 	ctx: AgentContext,
 ): void {
-	const { knownJsonlFiles, nextAgentIdRef, agents, persistAgents } = ctx;
+	const { nextAgentIdRef, agents, persistAgents } = ctx;
 
 	let files: string[];
 	try {
@@ -130,8 +130,6 @@ function scanAndAdopt(
 	} catch { return; }
 
 	for (const file of files) {
-		knownJsonlFiles.add(file);
-
 		// 跳過已被代理追蹤的檔案
 		if (isTrackedByAgent(file, ctx)) continue;
 

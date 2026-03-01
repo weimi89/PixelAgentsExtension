@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import type { BuildingConfig, FloorId } from './types.js';
 import { LAYOUT_FILE_DIR, PROJECT_FLOOR_MAP_FILE_NAME, DEFAULT_FLOOR_ID } from './constants.js';
+import { atomicWriteJson } from './atomicWrite.js';
 
 const userDir = path.join(os.homedir(), LAYOUT_FILE_DIR);
 
@@ -23,16 +24,8 @@ export function readProjectFloorMap(): Record<string, FloorId> {
 
 /** 寫入專案 → 樓層映射 */
 export function writeProjectFloorMap(map: Record<string, FloorId>): void {
-	const filePath = getMapFilePath();
-	const dir = path.dirname(filePath);
 	try {
-		if (!fs.existsSync(dir)) {
-			fs.mkdirSync(dir, { recursive: true });
-		}
-		const json = JSON.stringify(map, null, 2);
-		const tmpPath = filePath + '.tmp';
-		fs.writeFileSync(tmpPath, json, 'utf-8');
-		fs.renameSync(tmpPath, filePath);
+		atomicWriteJson(getMapFilePath(), map);
 	} catch (err) {
 		console.error('[Pixel Agents] Failed to write project floor map:', err);
 	}

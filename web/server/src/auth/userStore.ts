@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import bcrypt from 'bcryptjs';
 import { LAYOUT_FILE_DIR, USERS_FILE_NAME } from '../constants.js';
+import { atomicWriteJson } from '../atomicWrite.js';
 
 const userDir = path.join(os.homedir(), LAYOUT_FILE_DIR);
 
@@ -32,14 +33,7 @@ function readUsersData(): UsersData {
 }
 
 function writeUsersData(data: UsersData): void {
-	const filePath = getUsersFilePath();
-	const dir = path.dirname(filePath);
-	if (!fs.existsSync(dir)) {
-		fs.mkdirSync(dir, { recursive: true });
-	}
-	const tmpPath = filePath + '.tmp';
-	fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
-	fs.renameSync(tmpPath, filePath);
+	atomicWriteJson(getUsersFilePath(), data);
 }
 
 function generateId(): string {

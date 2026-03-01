@@ -19,9 +19,10 @@ import {
 import type { LoadedAssets, LoadedFloorTiles, LoadedWallTiles, LoadedCharacterSprites } from './assetLoader.js';
 // layoutPersistence 保留供舊路徑備用
 import { loadBuildingConfig, loadFloorLayout, writeFloorLayout, addFloor as addBuildingFloor, removeFloor as removeBuildingFloor, renameFloor as renameBuildingFloor } from './buildingPersistence.js';
-import { closeAgent, removeAgent, sendExistingAgents, getAllProjectDirs, getProjectDirPath, resumeSession, recoverTmuxAgents, checkTmuxHealth, savePersistedAgents } from './agentManager.js';
+import { closeAgent, removeAgent, sendExistingAgents, getAllProjectDirs, getProjectDirPath, resumeSession, recoverTmuxAgents, checkTmuxHealth, savePersistedAgents, extractProjectName } from './agentManager.js';
 import { setCustomName, addExcludedProject, removeExcludedProject, readExcludedProjects } from './projectNameStore.js';
 import { setTeamName } from './teamNameStore.js';
+import { atomicWriteJson } from './atomicWrite.js';
 import { scanAllSessions } from './sessionScanner.js';
 import { ensureProjectScan } from './fileWatcher.js';
 import {
@@ -61,7 +62,6 @@ registerAdapter(geminiAdapter);
 const agents = new Map<number, AgentState>();
 const nextAgentIdRef = { current: 1 };
 const activeAgentIdRef = { current: null as number | null };
-const knownJsonlFiles = new Set<string>();
 const projectScanTimerRef = { current: null as ReturnType<typeof setInterval> | null };
 const tmuxRecoveredRef = { current: false };
 
@@ -117,11 +117,7 @@ function readJsonFile<T>(filePath: string, fallback: T): T {
 
 function writeJsonFile(filePath: string, data: unknown): void {
 	try {
-		const dir = path.dirname(filePath);
-		if (!fs.existsSync(dir)) {
-			fs.mkdirSync(dir, { recursive: true });
-		}
-		fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+		atomicWriteJson(filePath, data);
 	} catch (err) {
 		console.error(`[Pixel Agents] Failed to write ${filePath}:`, err);
 	}
@@ -160,7 +156,6 @@ const ctx: AgentContext = {
 	agents,
 	nextAgentIdRef,
 	activeAgentIdRef,
-	knownJsonlFiles,
 	fileWatchers,
 	pollingTimers,
 	waitingTimers,
@@ -320,6 +315,24 @@ async function main(): Promise<void> {
 
 	httpServer.on('upgrade', (request, socket, head) => {
 		if (request.url?.startsWith(TERMINAL_WS_PATH)) {
+			// Origin 驗證：僅允許同源請求
+			const origin = request.headers.origin;
+			const host = request.headers.host;
+			if (origin && host) {
+				try {
+					const originHost = new URL(origin).host;
+					if (originHost !== host) {
+						console.warn(`[Pixel Agents] Terminal WS rejected: origin ${origin} != host ${host}`);
+						socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+						socket.destroy();
+						return;
+					}
+				} catch {
+					socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+					socket.destroy();
+					return;
+				}
+			}
 			terminalWss.handleUpgrade(request, socket, head, (ws) => {
 				terminalWss.emit('connection', ws, request);
 			});
@@ -785,6 +798,24 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 		case 'removeFloor': {
 			const removed = removeBuildingFloor(ctx.building, msg.floorId);
 			if (removed) {
+				// 清理該樓層的聊天歷史
+				chatHistory.delete(msg.floorId);
+
+				// 將該樓層的代理遷移至預設樓層
+				const defaultFloorId = ctx.building.defaultFloorId;
+				for (const [id, agent] of agents) {
+					if (agent.floorId === msg.floorId) {
+						agent.floorId = defaultFloorId;
+						ctx.floorSender(defaultFloorId).postMessage({
+							type: 'agentCreated', id,
+							projectName: extractProjectName(agent.projectDir),
+							floorId: defaultFloorId,
+							...(agent.projectDir !== ctx.ownProjectDir ? { isExternal: true } : {}),
+							...(agent.cliType !== 'claude' ? { cliType: agent.cliType } : {}),
+						});
+					}
+				}
+
 				console.log(`[Pixel Agents] Removed floor: ${msg.floorId}`);
 				ctx.sender?.postMessage({ type: 'buildingConfig', building: ctx.building });
 				ctx.broadcastFloorSummaries();

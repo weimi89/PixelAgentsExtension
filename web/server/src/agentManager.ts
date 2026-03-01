@@ -177,7 +177,7 @@ function spawnCliAgent(
 	cliType: CliType = 'claude',
 ): void {
 	const {
-		nextAgentIdRef, agents, activeAgentIdRef, knownJsonlFiles,
+		nextAgentIdRef, agents, activeAgentIdRef,
 		jsonlPollTimers, persistAgents,
 	} = ctx;
 
@@ -188,7 +188,6 @@ function spawnCliAgent(
 	}
 
 	const projectDir = path.dirname(expectedFile);
-	knownJsonlFiles.add(expectedFile);
 
 	const cleanEnv = adapter.buildCleanEnv();
 	const binaryPath = adapter.getBinaryPath();
@@ -313,14 +312,11 @@ export function removeAgent(
 ): void {
 	const {
 		agents, fileWatchers, pollingTimers, waitingTimers,
-		permissionTimers, jsonlPollTimers, knownJsonlFiles, persistAgents,
+		permissionTimers, jsonlPollTimers, persistAgents,
 	} = ctx;
 
 	const agent = agents.get(agentId);
 	if (!agent) return;
-
-	// 允許此會話再次活躍時被重新收養
-	knownJsonlFiles.delete(agent.jsonlFile);
 
 	const jpTimer = jsonlPollTimers.get(agentId);
 	if (jpTimer) { clearInterval(jpTimer); }
@@ -375,7 +371,7 @@ export function closeAgent(
 export function recoverTmuxAgents(
 	ctx: AgentContext,
 ): number {
-	const { nextAgentIdRef, agents, knownJsonlFiles, persistAgents } = ctx;
+	const { nextAgentIdRef, agents, persistAgents } = ctx;
 
 	if (!isTmuxAvailable()) return 0;
 
@@ -426,8 +422,7 @@ export function recoverTmuxAgents(
 		}
 
 		// 如果已被收養則跳過
-		if (knownJsonlFiles.has(jsonlFile)) continue;
-		knownJsonlFiles.add(jsonlFile);
+		if (ctx.trackedJsonlFiles.has(jsonlFile)) continue;
 
 		const floorId = persistedFloorId || resolveFloorForProject(projectDir, ctx.building);
 		const cliType = match?.cliType || detectCliTypeFromPath(projectDir);

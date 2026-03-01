@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { LAYOUT_FILE_DIR, PROJECT_NAMES_FILE_NAME, EXCLUDED_PROJECTS_FILE_NAME } from './constants.js';
+import { atomicWriteJson } from './atomicWrite.js';
 
 function getFilePath(): string {
 	return path.join(os.homedir(), LAYOUT_FILE_DIR, PROJECT_NAMES_FILE_NAME);
@@ -18,16 +19,8 @@ export function readProjectNames(): Record<string, string> {
 }
 
 function writeProjectNames(map: Record<string, string>): void {
-	const filePath = getFilePath();
-	const dir = path.dirname(filePath);
 	try {
-		if (!fs.existsSync(dir)) {
-			fs.mkdirSync(dir, { recursive: true });
-		}
-		const json = JSON.stringify(map, null, 2);
-		const tmpPath = filePath + '.tmp';
-		fs.writeFileSync(tmpPath, json, 'utf-8');
-		fs.renameSync(tmpPath, filePath);
+		atomicWriteJson(getFilePath(), map);
 	} catch (err) {
 		console.error('[Pixel Agents] Failed to write project names:', err);
 	}
@@ -64,16 +57,8 @@ export function readExcludedProjects(): string[] {
 }
 
 function writeExcludedProjects(list: string[]): void {
-	const filePath = getExcludedFilePath();
-	const dir = path.dirname(filePath);
 	try {
-		if (!fs.existsSync(dir)) {
-			fs.mkdirSync(dir, { recursive: true });
-		}
-		const json = JSON.stringify(list, null, 2);
-		const tmpPath = filePath + '.tmp';
-		fs.writeFileSync(tmpPath, json, 'utf-8');
-		fs.renameSync(tmpPath, filePath);
+		atomicWriteJson(getExcludedFilePath(), list);
 	} catch (err) {
 		console.error('[Pixel Agents] Failed to write excluded projects:', err);
 	}
