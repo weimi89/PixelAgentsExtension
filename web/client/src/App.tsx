@@ -205,6 +205,9 @@ function App() {
     editor.handleToggleEditMode,
   )
 
+  const handleToggleDayNight = useCallback(() => setDayNightEnabled((v) => !v), [])
+  const handleDayNightTimeOverrideChange = useCallback((h: number | null) => setDayNightTimeOverride(h), [])
+
   const handleCloseAgent = useCallback((id: number) => {
     vscode.postMessage({ type: 'closeAgent', id })
   }, [])
@@ -346,9 +349,9 @@ function App() {
         isBuildingViewOpen={isBuildingViewOpen}
         onToggleBuildingView={handleToggleBuildingView}
         dayNightEnabled={dayNightEnabled}
-        onToggleDayNight={useCallback(() => setDayNightEnabled((v) => !v), [])}
+        onToggleDayNight={handleToggleDayNight}
         dayNightTimeOverride={dayNightTimeOverride}
-        onDayNightTimeOverrideChange={useCallback((h: number | null) => setDayNightTimeOverride(h), [])}
+        onDayNightTimeOverrideChange={handleDayNightTimeOverrideChange}
       />
 
       <SessionPicker
