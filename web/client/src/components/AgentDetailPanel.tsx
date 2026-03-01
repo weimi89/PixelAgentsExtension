@@ -349,33 +349,14 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
                   key={`${entry.ts}-${i}`}
                   style={{
                     display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 8,
-                    marginBottom: 4,
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '2px 0',
                     fontSize: '16px',
                   }}
                 >
-                  {/* 時間線視覺元素 */}
-                  <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    flexShrink: 0,
-                    width: 10,
-                    paddingTop: 4,
-                  }}>
-                    <span style={statusDotStyle(dotColor)} />
-                    {i < history.length - 1 && (
-                      <div style={{
-                        width: 1,
-                        height: 14,
-                        background: 'rgba(255,255,255,0.1)',
-                        marginTop: 2,
-                      }} />
-                    )}
-                  </div>
+                  <span style={statusDotStyle(dotColor)} />
 
-                  {/* 時間戳 */}
                   <span style={{
                     color: 'rgba(255,255,255,0.35)',
                     flexShrink: 0,
@@ -384,7 +365,6 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
                     {formatTime(entry.ts)}
                   </span>
 
-                  {/* 狀態文字 */}
                   <span style={{
                     color: dotColor,
                     overflow: 'hidden',
