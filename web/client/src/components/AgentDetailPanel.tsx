@@ -56,12 +56,14 @@ const closeBtnStyle: React.CSSProperties = {
   borderRadius: 0,
 }
 
-const sectionTitleStyle: React.CSSProperties = {
+const sectionHeaderStyle: React.CSSProperties = {
   fontSize: '20px',
   color: 'var(--pixel-accent)',
   fontWeight: 'bold',
-  padding: '8px 10px 4px',
+  padding: '6px 10px',
   borderBottom: '1px solid rgba(255,255,255,0.08)',
+  flexShrink: 0,
+  background: 'var(--pixel-bg)',
 }
 
 const rowStyle: React.CSSProperties = {
@@ -86,12 +88,6 @@ const valueStyle: React.CSSProperties = {
   textAlign: 'right',
 }
 
-const bodyStyle: React.CSSProperties = {
-  flex: 1,
-  overflowY: 'auto',
-  overflowX: 'hidden',
-}
-
 const statusDotStyle = (color: string): React.CSSProperties => ({
   width: 6,
   height: 6,
@@ -101,6 +97,13 @@ const statusDotStyle = (color: string): React.CSSProperties => ({
   display: 'inline-block',
   marginRight: 6,
 })
+
+const scrollAreaStyle: React.CSSProperties = {
+  flex: 1,
+  overflowY: 'auto',
+  overflowX: 'hidden',
+  minHeight: 0,
+}
 
 // ---- 工具函式 ----
 
@@ -228,11 +231,8 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
         </button>
       </div>
 
-      {/* 內容主體 */}
-      <div style={bodyStyle}>
-        {/* ---- 基本資訊 ---- */}
-        <div style={sectionTitleStyle}>{t.agentDetailInfo}</div>
-
+      {/* ---- 基本資訊（固定區域，不捲動） ---- */}
+      <div style={{ flexShrink: 0, borderBottom: '2px solid var(--pixel-border)' }}>
         <div style={rowStyle}>
           <span style={labelStyle}>ID</span>
           <span style={valueStyle}>#{agentId}</span>
@@ -273,10 +273,19 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
             <span style={{ ...valueStyle, color: '#e8a040' }}>{agent.owner}</span>
           </div>
         )}
+      </div>
 
-        {/* ---- 工具活動 ---- */}
-        <div style={{ ...sectionTitleStyle, marginTop: 4 }}>{t.agentDetailTools}</div>
+      {/* ---- 工具活動（固定標題 + 獨立捲動） ---- */}
+      <div style={sectionHeaderStyle}>
+        {t.agentDetailTools}
+        {tools.length > 0 && (
+          <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 'normal', marginLeft: 6, fontSize: '16px' }}>
+            ({tools.length})
+          </span>
+        )}
+      </div>
 
+      <div style={scrollAreaStyle}>
         {tools.length === 0 ? (
           <div style={{ padding: '6px 10px', fontSize: '18px', color: 'rgba(255,255,255,0.3)' }}>
             {t.noToolData}
@@ -313,10 +322,19 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
             })}
           </div>
         )}
+      </div>
 
-        {/* ---- 狀態歷史 ---- */}
-        <div style={{ ...sectionTitleStyle, marginTop: 4 }}>{t.agentDetailHistory}</div>
+      {/* ---- 狀態歷史（固定標題 + 獨立捲動） ---- */}
+      <div style={{ ...sectionHeaderStyle, borderTop: '2px solid var(--pixel-border)' }}>
+        {t.agentDetailHistory}
+        {history.length > 0 && (
+          <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 'normal', marginLeft: 6, fontSize: '16px' }}>
+            ({history.length})
+          </span>
+        )}
+      </div>
 
+      <div style={scrollAreaStyle}>
         {history.length === 0 ? (
           <div style={{ padding: '6px 10px', fontSize: '18px', color: 'rgba(255,255,255,0.3)' }}>
             {t.noHistory}
