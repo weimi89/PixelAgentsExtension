@@ -78,3 +78,17 @@ html, body, #root {
 .pixel-agents-pulse {
   animation: pixel-agents-pulse 1.5s ease-in-out infinite;
 }
+
+@keyframes chatPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+button:focus-visible, input:focus-visible {
+  outline: 2px solid var(--pixel-accent);
+  outline-offset: 1px;
+}
+
+button {
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}

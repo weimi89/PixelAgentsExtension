@@ -27,6 +27,9 @@ export const ChatPanel = memo(function ChatPanel({ messages }: ChatPanelProps) {
   const [expanded, setExpanded] = useState(false)
   const [inputText, setInputText] = useState('')
   const [hasNew, setHasNew] = useState(false)
+  const [inputFocused, setInputFocused] = useState(false)
+  const [sendHovered, setSendHovered] = useState(false)
+  const [closeHovered, setCloseHovered] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const prevMsgCountRef = useRef(messages.length)
@@ -156,10 +159,12 @@ export const ChatPanel = memo(function ChatPanel({ messages }: ChatPanelProps) {
             <span style={{ fontSize: '20px', color: 'rgba(255,255,255,0.9)' }}>{t.chat}</span>
             <button
               onClick={() => setExpanded(false)}
+              onMouseEnter={() => setCloseHovered(true)}
+              onMouseLeave={() => setCloseHovered(false)}
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: 'rgba(255,255,255,0.6)',
+                color: closeHovered ? 'var(--pixel-close-hover)' : 'rgba(255,255,255,0.6)',
                 fontSize: '20px',
                 cursor: 'pointer',
                 padding: '0 4px',
@@ -181,12 +186,17 @@ export const ChatPanel = memo(function ChatPanel({ messages }: ChatPanelProps) {
               maxHeight: 220,
             }}
           >
-            {visibleMessages.map((msg, i) => (
-              <div key={`${msg.ts}-${i}`} style={{ fontSize: '18px', marginBottom: 2, wordBreak: 'break-word' }}>
-                <span style={{ color: nicknameColor(msg.nickname), fontWeight: 'bold' }}>{msg.nickname}</span>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>: {msg.text}</span>
-              </div>
-            ))}
+            {visibleMessages.map((msg, i) => {
+              const d = new Date(msg.ts)
+              const ts = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+              return (
+                <div key={`${msg.ts}-${i}`} style={{ fontSize: '18px', marginBottom: 2, wordBreak: 'break-word' }}>
+                  <span style={{ color: nicknameColor(msg.nickname), fontWeight: 'bold' }}>{msg.nickname}</span>
+                  <span style={{ color: 'rgba(255,255,255,0.7)' }}>: {msg.text}</span>
+                  <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '14px', marginLeft: 6 }}>{ts}</span>
+                </div>
+              )
+            })}
             {visibleMessages.length === 0 && (
               <div style={{ fontSize: '18px', color: 'rgba(255,255,255,0.3)', textAlign: 'center', padding: 8 }}>
                 ...
@@ -209,13 +219,14 @@ export const ChatPanel = memo(function ChatPanel({ messages }: ChatPanelProps) {
               value={inputText}
               onChange={(e) => setInputText(e.target.value.slice(0, CHAT_INPUT_MAX_LENGTH))}
               onKeyDown={handleKeyDown}
-              onFocus={(e) => e.stopPropagation()}
+              onFocus={(e) => { e.stopPropagation(); setInputFocused(true) }}
+              onBlur={() => setInputFocused(false)}
               placeholder={t.chatPlaceholder}
               maxLength={CHAT_INPUT_MAX_LENGTH}
               style={{
                 flex: 1,
                 background: 'rgba(255,255,255,0.05)',
-                border: '1px solid var(--pixel-border)',
+                border: `1px solid ${inputFocused ? 'var(--pixel-accent)' : 'var(--pixel-border)'}`,
                 borderRadius: 0,
                 color: 'var(--pixel-text)',
                 fontSize: '18px',
@@ -226,8 +237,10 @@ export const ChatPanel = memo(function ChatPanel({ messages }: ChatPanelProps) {
             />
             <button
               onClick={handleSend}
+              onMouseEnter={() => setSendHovered(true)}
+              onMouseLeave={() => setSendHovered(false)}
               style={{
-                background: 'var(--pixel-btn-bg)',
+                background: sendHovered ? 'var(--pixel-btn-hover-bg)' : 'var(--pixel-btn-bg)',
                 border: '2px solid transparent',
                 borderRadius: 0,
                 color: 'var(--pixel-text)',
@@ -240,6 +253,19 @@ export const ChatPanel = memo(function ChatPanel({ messages }: ChatPanelProps) {
               {t.chatSend}
             </button>
           </div>
+          {/* 字數指示 */}
+          {inputText.length > 0 && (
+            <div style={{
+              textAlign: 'right',
+              padding: '0 8px 2px',
+              fontSize: '14px',
+              color: inputText.length > CHAT_INPUT_MAX_LENGTH * 0.8
+                ? '#ef5b5b'
+                : 'rgba(255,255,255,0.3)',
+            }}>
+              {inputText.length}/{CHAT_INPUT_MAX_LENGTH}
+            </div>
+          )}
         </div>
       )}
     </div>

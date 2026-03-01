@@ -161,4 +161,6 @@ export const t = {
   active: '活躍',
   inactive: '閒置',
   remote: '遠端',
+  noAgentsYet: '尚無代理',
+  noToolData: '尚無工具資料',
 } as const

@@ -74,7 +74,7 @@ export function Dashboard() {
       </div>
 
       {/* 統計卡片 */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', flex: 'none' }}>
         <StatCard label={t.totalAgents} value={stats.totalAgents} color="#5b8def" />
         <StatCard label={t.activeAgents} value={stats.activeAgents} color="#5bef7a" />
         <StatCard label={t.totalToolCalls} value={stats.totalToolCalls} color="#efcf5b" />
@@ -126,7 +126,7 @@ export function Dashboard() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               {sortedTools.map(([name, count]) => (
                 <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: '18px', color: 'rgba(255,255,255,0.7)', minWidth: 90, textAlign: 'right' }}>{name}</span>
+                  <span title={name} style={{ fontSize: '18px', color: 'rgba(255,255,255,0.7)', maxWidth: 140, minWidth: 90, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{name}</span>
                   <div style={{ flex: 1, height: 12, background: 'rgba(255,255,255,0.05)', position: 'relative' }}>
                     <div style={{
                       position: 'absolute',
@@ -142,7 +142,7 @@ export function Dashboard() {
                 </div>
               ))}
               {sortedTools.length === 0 && (
-                <span style={{ fontSize: '18px', color: 'rgba(255,255,255,0.3)' }}>...</span>
+                <span style={{ fontSize: '18px', color: 'rgba(255,255,255,0.3)' }}>{t.noToolData}</span>
               )}
             </div>
           </div>
@@ -188,7 +188,7 @@ export function Dashboard() {
               ))}
               {agents.length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ ...tdStyle, textAlign: 'center', color: 'rgba(255,255,255,0.3)' }}>...</td>
+                  <td colSpan={5} style={{ ...tdStyle, textAlign: 'center', color: 'rgba(255,255,255,0.3)' }}>{t.noAgentsYet}</td>
                 </tr>
               )}
             </tbody>
@@ -205,10 +205,10 @@ function StatCard({ label, value, color }: { label: string; value: number; color
       background: 'var(--pixel-bg)',
       border: '2px solid var(--pixel-border)',
       padding: '8px 16px',
-      minWidth: 120,
+      minWidth: 160,
       boxShadow: 'var(--pixel-shadow)',
     }}>
-      <div style={{ fontSize: '36px', color, fontWeight: 'bold' }}>{value}</div>
+      <div style={{ fontSize: '48px', color, fontWeight: 'bold' }}>{value}</div>
       <div style={{ fontSize: '18px', color: 'rgba(255,255,255,0.5)' }}>{label}</div>
     </div>
   )
@@ -245,6 +245,10 @@ const thStyle: React.CSSProperties = {
   padding: '4px 8px',
   color: 'rgba(255,255,255,0.6)',
   fontWeight: 'normal',
+  position: 'sticky',
+  top: 0,
+  background: 'var(--pixel-bg)',
+  zIndex: 1,
 }
 
 const tdStyle: React.CSSProperties = {

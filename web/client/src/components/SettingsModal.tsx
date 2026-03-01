@@ -210,8 +210,8 @@ export function SettingsModal({ isOpen, onClose, isDebugMode, onToggleDebugMode,
           <span>{t.soundNotifications}</span>
           <span
             style={{
-              width: 14,
-              height: 14,
+              width: 18,
+              height: 18,
               border: '2px solid rgba(255, 255, 255, 0.5)',
               borderRadius: 0,
               background: soundLocal ? 'rgba(90, 140, 255, 0.8)' : 'transparent',
@@ -239,8 +239,8 @@ export function SettingsModal({ isOpen, onClose, isDebugMode, onToggleDebugMode,
           <span>{t.dayNightCycle}</span>
           <span
             style={{
-              width: 14,
-              height: 14,
+              width: 18,
+              height: 18,
               border: '2px solid rgba(255, 255, 255, 0.5)',
               borderRadius: 0,
               background: dayNightEnabled ? 'rgba(90, 140, 255, 0.8)' : 'transparent',
