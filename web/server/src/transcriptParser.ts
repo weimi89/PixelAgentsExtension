@@ -20,6 +20,7 @@ const GIT_BRANCH_ON_RE = /On branch\s+(\S+)/;
 const GIT_BRANCH_STAR_RE = /^\*\s+(\S+)/m;
 import { formatToolStatus, PERMISSION_EXEMPT_TOOLS } from 'pixel-agents-shared';
 import { incrementToolCall } from './dashboardStats.js';
+import { recordToolCall, recordTurnComplete } from './growthSystem.js';
 
 export { formatToolStatus, PERMISSION_EXEMPT_TOOLS };
 
@@ -133,6 +134,12 @@ export function processTranscriptLine(
 					progressExtensions.delete(agentId); // 新工具開始，重設進度延長計數
 					startPermissionTimer(agentId, agents, permissionTimers, PERMISSION_EXEMPT_TOOLS, sender);
 				}
+				// 成長系統：記錄每個工具呼叫
+				for (const block of blocks) {
+					if (block.type === "tool_use" && block.id) {
+						recordToolCall(agentId, agent, block.name || "", sender);
+					}
+				}
 				// 轉錄：記錄工具呼叫
 				const lastStatus = agent.activeToolStatuses.size > 0 ? [...agent.activeToolStatuses.values()].pop()! : 'Using tools';
 				appendTranscript(agentId, agent, 'assistant', lastStatus, sender);
@@ -245,6 +252,7 @@ export function processTranscriptLine(
 				id: agentId,
 				status: 'waiting',
 			});
+			recordTurnComplete(agentId, agent, sender);
 			appendStatusHistory(agent, 'waiting', 'turn_complete');
 			appendTranscript(agentId, agent, 'system', 'Turn complete', sender);
 		}

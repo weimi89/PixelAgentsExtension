@@ -3,7 +3,8 @@ import * as path from 'path';
 import type { AgentContext, AgentState } from './types.js';
 import { cancelWaitingTimer, cancelPermissionTimer, clearAgentActivity } from './timerManager.js';
 import { processTranscriptLine } from './transcriptParser.js';
-import { removeAgent, extractProjectName, detectCliTypeFromPath } from './agentManager.js';
+import { removeAgent, extractProjectName, detectCliTypeFromPath, loadPersistedAgents } from './agentManager.js';
+import { DEFAULT_GROWTH, restoreGrowth, recordSessionStart } from './growthSystem.js';
 import { resolveFloorForProject } from './floorAssignment.js';
 import { getTeamName } from './teamNameStore.js';
 import { FILE_WATCHER_POLL_INTERVAL_MS, PROJECT_SCAN_INTERVAL_MS, ACTIVE_JSONL_MAX_AGE_MS, STALE_AGENT_TIMEOUT_MS, DEFAULT_FLOOR_ID } from './constants.js';
@@ -11,6 +12,20 @@ import { FILE_WATCHER_POLL_INTERVAL_MS, PROJECT_SCAN_INTERVAL_MS, ACTIVE_JSONL_M
 /** 每代理的 readNewLines 節流時間戳，防止 fs.watch + 輪詢雙重觸發 */
 const lastReadTime = new Map<number, number>();
 const READ_THROTTLE_MS = 100;
+
+/** 持久化代理快取（每次掃描週期重新載入） */
+let persistedAgentsCache: ReturnType<typeof loadPersistedAgents> | null = null;
+let persistedAgentsCacheTime = 0;
+const PERSISTED_CACHE_TTL_MS = 5000;
+
+function loadPersistedAgentsOnce(): ReturnType<typeof loadPersistedAgents> {
+	const now = Date.now();
+	if (!persistedAgentsCache || now - persistedAgentsCacheTime > PERSISTED_CACHE_TTL_MS) {
+		persistedAgentsCache = loadPersistedAgents();
+		persistedAgentsCacheTime = now;
+	}
+	return persistedAgentsCache;
+}
 
 /** 啟動檔案監視（fs.watch + 輪詢備援），偵測 JSONL 檔案變更 */
 export function startFileWatching(
@@ -179,14 +194,23 @@ function scanAndAdopt(
 			statusHistory: [],
 			teamName: getTeamName(projectDir),
 			cliType,
+			growth: { ...DEFAULT_GROWTH },
 		};
+		// 嘗試從持久化資料還原成長狀態
+		const sessionId = path.basename(file, '.jsonl');
+		const persisted = loadPersistedAgentsOnce();
+		const match = persisted.find(p => p.sessionId === sessionId);
+		if (match) {
+			agent.growth = restoreGrowth(match);
+		}
 		agents.set(id, agent);
 		ctx.trackedJsonlFiles.set(file, id);
 		ctx.incrementFloorCount(floorId);
+		const floorSend = ctx.floorSender(floorId);
+		recordSessionStart(id, agent, floorSend);
 		persistAgents();
 		console.log(`[Pixel Agents] Auto-adopted session: ${path.basename(file)} → Agent ${id} (floor: ${floorId})`);
 		const isExternal = projectDir !== ctx.ownProjectDir;
-		const floorSend = ctx.floorSender(floorId);
 		floorSend.postMessage({
 			type: 'agentCreated',
 			id,

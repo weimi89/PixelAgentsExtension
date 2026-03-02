@@ -85,6 +85,8 @@ export interface ExtensionMessageState {
   agentCliTypes: Record<number, string>
   /** 區網已發現的同伴 */
   lanPeers: Array<{ name: string; host: string; port: number; agentCount: number }>
+  /** agentId → 成長資料 */
+  agentGrowthData: Record<number, { xp: number; level: number; achievements: string[] }>
 }
 
 /** 轉錄記錄條目 */
@@ -136,6 +138,7 @@ interface HandlerContext {
   setAgentTeams: React.Dispatch<React.SetStateAction<Record<number, string>>>
   setAgentCliTypes: React.Dispatch<React.SetStateAction<Record<number, string>>>
   setLanPeers: React.Dispatch<React.SetStateAction<Array<{ name: string; host: string; port: number; agentCount: number }>>>
+  setAgentGrowthData: React.Dispatch<React.SetStateAction<Record<number, { xp: number; level: number; achievements: string[] }>>>
 }
 
 // ── Message Handlers ───────────────────────────────────────────
@@ -207,6 +210,7 @@ function handleAgentClosed(msg: ServerMessage & { type: 'agentClosed' }, ctx: Ha
   ctx.setAgentStatusHistory((prev) => removeKey(prev, id))
   ctx.setAgentTeams((prev) => removeKey(prev, id))
   ctx.setAgentCliTypes((prev) => removeKey(prev, id))
+  ctx.setAgentGrowthData((prev) => removeKey(prev, id))
   ctx.os.removeAllSubagents(id)
   ctx.setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id))
   ctx.os.removeAgent(id)
@@ -578,6 +582,19 @@ function handleBehaviorSettingsLoaded(msg: ServerMessage & { type: 'behaviorSett
   setBehaviorConfig(msg.settings as Record<string, number>)
 }
 
+function handleAgentGrowth(msg: ServerMessage & { type: 'agentGrowth' }, ctx: HandlerContext): void {
+  // 更新 OfficeState 中角色的等級
+  const ch = ctx.os.characters.get(msg.id)
+  if (ch) {
+    ch.level = msg.level
+  }
+  // 更新 React state
+  ctx.setAgentGrowthData((prev) => ({
+    ...prev,
+    [msg.id]: { xp: msg.xp, level: msg.level, achievements: msg.achievements },
+  }))
+}
+
 function handleFloorSwitched(msg: ServerMessage & { type: 'floorSwitched' }, ctx: HandlerContext): void {
   ctx.setCurrentFloorId(msg.floorId)
   // 清空當前代理相關狀態，新樓層的資料會隨 existingAgents + layoutLoaded 到來
@@ -644,6 +661,7 @@ const messageHandlers: Record<string, HandlerFn> = {
   agentTeam: handleAgentTeam as HandlerFn,
   lanPeers: handleLanPeers as HandlerFn,
   behaviorSettingsLoaded: handleBehaviorSettingsLoaded as HandlerFn,
+  agentGrowth: handleAgentGrowth as HandlerFn,
 }
 
 // ── Hook ────────────────────────────────────────────────────────
@@ -678,6 +696,7 @@ export function useExtensionMessages(
   const [agentTeams, setAgentTeams] = useState<Record<number, string>>({})
   const [agentCliTypes, setAgentCliTypes] = useState<Record<number, string>>({})
   const [lanPeers, setLanPeers] = useState<Array<{ name: string; host: string; port: number; agentCount: number }>>([])
+  const [agentGrowthData, setAgentGrowthData] = useState<Record<number, { xp: number; level: number; achievements: string[] }>>({})
 
   const layoutReadyRef = useRef(false)
   const pendingAgentsRef = useRef<Array<{ id: number; palette?: number; hueShift?: number; seatId?: string }>>([])
@@ -714,6 +733,7 @@ export function useExtensionMessages(
       setAgentTeams,
       setAgentCliTypes,
       setLanPeers,
+      setAgentGrowthData,
     }
 
     const handler = (data: unknown) => {
@@ -729,5 +749,5 @@ export function useExtensionMessages(
     return unsub
   }, [getOfficeState])
 
-  return { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, excludedProjects, projectDirs, currentFloorId, building, floorSummaries, chatMessages, agentGitBranches, agentStatusHistory, agentTeams, agentCliTypes, lanPeers }
+  return { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, excludedProjects, projectDirs, currentFloorId, building, floorSummaries, chatMessages, agentGitBranches, agentStatusHistory, agentTeams, agentCliTypes, lanPeers, agentGrowthData }
 }

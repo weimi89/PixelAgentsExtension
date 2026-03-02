@@ -61,6 +61,9 @@ import {
   TEAM_CONNECTION_LINE_ALPHA,
   TEAM_CONNECTION_LINE_WIDTH,
   TEAM_CONNECTION_DASH,
+  LEVEL_BADGE_COLORS,
+  LEVEL_GLOW_COLORS,
+  LEVEL_BADGE_VERTICAL_OFFSET_PX,
 } from '../../constants.js'
 
 // ── 靜態磚層離屏 Canvas 快取 ──────────────────────────────
@@ -266,6 +269,27 @@ export function renderScene(
           c.restore()
         },
       })
+    }
+
+    // 等級光暈（25+ 級銀色，50+ 級金色）— 與子代理/遠端光暈獨立
+    if (!ch.isSubagent && !ch.isRemote && !isSelected && !isHovered && ch.level >= 25) {
+      const glowDef = LEVEL_GLOW_COLORS.find((g) => ch.level >= g.minLevel)
+      if (glowDef) {
+        const outlineData = getOutlineSprite(spriteData)
+        const outlineCached = getCachedSprite(outlineData, zoom)
+        const tinted = tintCanvas(outlineCached, glowDef.color)
+        const glowDrawX = drawX - zoom
+        const glowDrawY = drawY - zoom
+        drawables.push({
+          zY: charZY - OUTLINE_Z_SORT_OFFSET,
+          draw: (c) => {
+            c.save()
+            c.globalAlpha = glowDef.alpha
+            c.drawImage(tinted, glowDrawX, glowDrawY)
+            c.restore()
+          },
+        })
+      }
     }
 
     // 斷線角色以降低的不透明度渲染
@@ -695,6 +719,44 @@ export function renderTeamBadges(
   }
 }
 
+/** 繪製等級徽章（角色腳下的 "Lv{N}" 文字） */
+export function renderLevelBadges(
+  ctx: CanvasRenderingContext2D,
+  characters: Character[],
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+): void {
+  if (zoom < 2) return // 縮放太小時不繪製
+  for (const ch of characters) {
+    if (ch.level <= 1 || ch.matrixEffect) continue
+
+    const sittingOff = isSittingState(ch.state) ? CHARACTER_SITTING_OFFSET_PX : 0
+    const fontSize = Math.max(8, Math.round(5 * zoom))
+    const text = `Lv${ch.level}`
+
+    // 選取等級對應的顏色
+    const colorDef = LEVEL_BADGE_COLORS.find((c) => ch.level >= c.minLevel)
+    const color = colorDef ? colorDef.color : '#888888'
+
+    const bx = Math.round(offsetX + (ch.x + 8) * zoom)
+    const by = Math.round(offsetY + (ch.y + sittingOff + LEVEL_BADGE_VERTICAL_OFFSET_PX) * zoom)
+
+    ctx.save()
+    ctx.font = `${fontSize}px "FS Pixel Sans", monospace`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+    // 暗色背景描邊
+    ctx.strokeStyle = '#000000'
+    ctx.lineWidth = Math.max(2, zoom * 0.6)
+    ctx.strokeText(text, bx, by)
+    // 前景色
+    ctx.fillStyle = color
+    ctx.fillText(text, bx, by)
+    ctx.restore()
+  }
+}
+
 export interface ButtonBounds {
   /** 裝置像素中的中心 X */
   cx: number
@@ -793,6 +855,9 @@ export function renderFrame(
   const selectedId = selection?.selectedAgentId ?? null
   const hoveredId = selection?.hoveredAgentId ?? null
   renderScene(ctx, allFurniture, characters, offsetX, offsetY, zoom, selectedId, hoveredId)
+
+  // 等級徽章（在角色腳下）
+  renderLevelBadges(ctx, characters, offsetX, offsetY, zoom)
 
   // 團隊徽章（在角色上方）
   renderTeamBadges(ctx, characters, offsetX, offsetY, zoom)

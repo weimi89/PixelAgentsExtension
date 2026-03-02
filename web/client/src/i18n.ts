@@ -251,4 +251,21 @@ export const t = {
   behaviorResetDefaults: '恢復預設',
   behaviorSeconds: (n: number) => `${n}s`,
   behaviorMinMax: (label: string) => `${label}（最小/最大）`,
+
+  // 成長系統
+  growthLevel: (n: number) => `Lv.${n}`,
+  growthXp: (n: number) => `${n} XP`,
+  growthSection: '成長',
+  achievementNames: {
+    first_tool: '初次呼叫',
+    ten_tools: '十連呼叫',
+    hundred_tools: '百次呼叫',
+    thousand_tools: '千次呼叫',
+    level_5: '等級 5',
+    level_10: '等級 10',
+    level_25: '等級 25',
+    level_50: '等級 50',
+    five_sessions: '老手',
+    bash_user: '命令行達人',
+  } as Record<string, string>,
 } as const

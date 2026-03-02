@@ -1,11 +1,17 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import type { ToolActivity } from '../office/types.js'
 import { extractToolName } from '../office/toolUtils.js'
-import { TOOL_TYPE_COLORS } from '../constants.js'
+import { TOOL_TYPE_COLORS, LEVEL_BADGE_COLORS } from '../constants.js'
 import { AgentTimeline } from './AgentTimeline.js'
 import { formatModelName } from '../utils.js'
 import { vscode } from '../socketApi.js'
 import { t } from '../i18n.js'
+
+interface GrowthInfo {
+  xp: number
+  level: number
+  achievements: string[]
+}
 
 interface AgentDetailPanelProps {
   agentId: number
@@ -15,6 +21,7 @@ interface AgentDetailPanelProps {
   agentModels: Record<number, string>
   agentGitBranches: Record<number, string>
   agentStatusHistory: Record<number, Array<{ ts: number; status: string; detail?: string }>>
+  agentGrowthData: Record<number, GrowthInfo>
   onClose: () => void
 }
 
@@ -145,6 +152,24 @@ function getToolColor(status: string): string {
   return 'var(--pixel-text)'
 }
 
+/** 取得等級對應的顏色 */
+function getLevelColor(level: number): string {
+  const def = LEVEL_BADGE_COLORS.find((c) => level >= c.minLevel)
+  return def ? def.color : '#888888'
+}
+
+/** 計算 XP 在當前等級的進度百分比 */
+function getXpProgress(xp: number): number {
+  const level = Math.floor(Math.sqrt(xp / 10)) + 1
+  // 當前等級所需 XP：(level - 1)^2 * 10
+  const currentLevelXp = (level - 1) ** 2 * 10
+  // 下一等級所需 XP：level^2 * 10
+  const nextLevelXp = level ** 2 * 10
+  const range = nextLevelXp - currentLevelXp
+  if (range <= 0) return 100
+  return Math.min(100, ((xp - currentLevelXp) / range) * 100)
+}
+
 // ---- 元件 ----
 
 export const AgentDetailPanel = memo(function AgentDetailPanel({
@@ -155,6 +180,7 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
   agentModels,
   agentGitBranches,
   agentStatusHistory,
+  agentGrowthData,
   onClose,
 }: AgentDetailPanelProps) {
   const [visible, setVisible] = useState(false)
@@ -208,6 +234,7 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
   const model = agentModels[agentId]
   const branch = agentGitBranches[agentId]
   const history = agentStatusHistory[agentId] || []
+  const growth = agentGrowthData[agentId]
   const { text: statusText, color: statusColor } = statusDisplay(status)
 
   // 工具活動自動捲動到底部
@@ -295,6 +322,45 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
           </div>
         )}
       </div>
+
+      {/* ---- 成長資訊 ---- */}
+      {growth && growth.level > 1 && (
+        <div style={{ flexShrink: 0, borderBottom: '2px solid var(--pixel-border)', padding: '6px 10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ fontSize: '20px', color: getLevelColor(growth.level) }}>
+              {t.growthLevel(growth.level)}
+            </span>
+            <span style={{ fontSize: '16px', color: 'rgba(255,255,255,0.4)' }}>
+              {t.growthXp(growth.xp)}
+            </span>
+          </div>
+          {/* XP 進度條 */}
+          <div style={{ height: 6, background: 'rgba(255,255,255,0.1)', borderRadius: 0, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%',
+              width: `${getXpProgress(growth.xp)}%`,
+              background: getLevelColor(growth.level),
+              transition: 'width 0.3s ease',
+            }} />
+          </div>
+          {/* 成就列表 */}
+          {growth.achievements.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+              {growth.achievements.map((a) => (
+                <span key={a} style={{
+                  fontSize: '14px',
+                  padding: '1px 4px',
+                  background: 'rgba(255,255,255,0.08)',
+                  color: 'rgba(255,255,255,0.6)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                }}>
+                  {t.achievementNames[a] || a}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ---- 工具活動（固定標題 + 獨立捲動） ---- */}
       <div style={sectionHeaderStyle}>

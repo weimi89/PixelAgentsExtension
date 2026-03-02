@@ -231,6 +231,20 @@ export const COLORIZE_CACHE_MAX_SIZE = 256
 export const SPRITE_CACHE_MAX_ENTRIES = 64
 export const SPRITE_CACHE_MAX_ZOOM_LEVELS = 12
 
+// ── 等級系統 ──────────────────────────────────────────────────
+export const LEVEL_BADGE_COLORS: Array<{ minLevel: number; color: string }> = [
+  { minLevel: 50, color: '#ffd700' },   // 金色
+  { minLevel: 25, color: '#a29bfe' },   // 紫色
+  { minLevel: 10, color: '#4ecdc4' },   // 青色
+  { minLevel: 1, color: '#888888' },    // 灰色
+]
+export const LEVEL_GLOW_COLORS: Array<{ minLevel: number; color: string; alpha: number }> = [
+  { minLevel: 50, color: '#ffd700', alpha: 0.45 },   // 金色光暈
+  { minLevel: 25, color: '#c0c0c0', alpha: 0.35 },   // 銀色光暈
+]
+export const LEVEL_BADGE_FONT_SIZE = 5
+export const LEVEL_BADGE_VERTICAL_OFFSET_PX = 28
+
 // ── 團隊視覺化 ────────────────────────────────────────────────
 export const TEAM_COLORS = [
   '#ff6b6b', // 紅

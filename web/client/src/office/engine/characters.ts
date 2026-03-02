@@ -151,6 +151,7 @@ export function createCharacter(
     teamColor: null,
     recentFurnitureVisits: new Map(),
     gameTime: 0,
+    level: 1,
   }
 }
 

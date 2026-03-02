@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { spawn } from 'child_process';
 import type { AgentContext, AgentState, PersistedAgent, MessageSender } from './types.js';
+import { DEFAULT_GROWTH, restoreGrowth, recordSessionStart, calculateLevel } from './growthSystem.js';
 import { cancelWaitingTimer, cancelPermissionTimer } from './timerManager.js';
 import { startFileWatching, readNewLines } from './fileWatcher.js';
 import { JSONL_POLL_INTERVAL_MS, JSONL_POLL_TIMEOUT_MS, LAYOUT_FILE_DIR, AGENTS_FILE_NAME, DEFAULT_FLOOR_ID } from './constants.js';
@@ -82,6 +83,7 @@ export function savePersistedAgents(agents: Map<number, AgentState>): void {
 	for (const agent of agents.values()) {
 		// 從 JSONL 檔名中提取會話 ID
 		const sessionId = path.basename(agent.jsonlFile, '.jsonl');
+		const g = agent.growth;
 		data.push({
 			id: agent.id,
 			sessionId,
@@ -90,6 +92,7 @@ export function savePersistedAgents(agents: Map<number, AgentState>): void {
 			tmuxSessionName: agent.tmuxSessionName ?? undefined,
 			floorId: agent.floorId,
 			...(agent.cliType !== 'claude' ? { cliType: agent.cliType } : {}),
+			...(g.xp > 0 ? { xp: g.xp, toolCallCount: g.toolCallCount, sessionCount: g.sessionCount, bashCallCount: g.bashCallCount, achievements: g.achievements } : {}),
 		});
 	}
 	try {
@@ -161,6 +164,7 @@ function createAgentState(
 		statusHistory: [],
 		teamName: null,
 		cliType,
+		growth: { ...DEFAULT_GROWTH },
 	};
 }
 
@@ -246,6 +250,7 @@ function spawnCliAgent(
 	ctx.trackedJsonlFiles.set(agent.jsonlFile, id);
 	activeAgentIdRef.current = id;
 	ctx.incrementFloorCount(floorId);
+	recordSessionStart(id, agent, floorSend);
 	persistAgents();
 	console.log(`[Pixel Agents] Agent ${id}: ${label} (floor: ${floorId})`);
 	const isExternal = projectDir !== ctx.ownProjectDir;
@@ -430,6 +435,10 @@ export function recoverTmuxAgents(
 		const cliType = match?.cliType || detectCliTypeFromPath(projectDir);
 		const id = nextAgentIdRef.current++;
 		const agent = createAgentState(id, jsonlFile, projectDir, sessionName, false, floorId, cliType);
+		// 從持久化資料還原成長狀態
+		if (match) {
+			agent.growth = restoreGrowth(match);
+		}
 		// 從頭讀取以重建狀態
 		agent.fileOffset = 0;
 		agents.set(id, agent);
@@ -559,6 +568,17 @@ export function sendExistingAgents(
 				type: 'agentStatus',
 				id,
 				status: 'waiting',
+			});
+		}
+		// 傳送成長資料
+		if (agent.growth.xp > 0) {
+			sender.postMessage({
+				type: 'agentGrowth',
+				id,
+				xp: agent.growth.xp,
+				level: calculateLevel(agent.growth.xp),
+				achievements: agent.growth.achievements,
+				newAchievements: [],
 			});
 		}
 	}

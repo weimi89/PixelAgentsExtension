@@ -100,3 +100,4 @@ export type ServerMessage =
   | { type: 'agentTeam'; id: number; teamName: string | null }
   | { type: 'lanPeers'; peers: Array<{ name: string; host: string; port: number; agentCount: number }> }
   | { type: 'behaviorSettingsLoaded'; settings: Record<string, number> }
+  | { type: 'agentGrowth'; id: number; xp: number; level: number; achievements: string[]; newAchievements: string[] }

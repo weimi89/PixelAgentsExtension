@@ -108,6 +108,7 @@ function handleAgentNodeEvent(
 				statusHistory: [],
 				teamName: null,
 				cliType: 'claude',
+				growth: { xp: 0, toolCallCount: 0, sessionCount: 0, bashCallCount: 0, achievements: [] },
 			};
 
 			ctx.agents.set(id, agent);

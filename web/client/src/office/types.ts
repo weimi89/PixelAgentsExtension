@@ -291,4 +291,6 @@ export interface Character {
   recentFurnitureVisits: Map<string, number>
   /** 遊戲內累計時間（秒） */
   gameTime: number
+  /** 代理等級（由成長系統設定） */
+  level: number
 }

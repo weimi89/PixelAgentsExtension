@@ -57,6 +57,17 @@ export interface AgentState {
 	teamName: string | null;
 	/** 此代理的 CLI 類型（claude/codex/gemini） */
 	cliType: string;
+	/** 代理成長追蹤資料 */
+	growth: GrowthData;
+}
+
+/** 代理成長追蹤資料 */
+export interface GrowthData {
+	xp: number;
+	toolCallCount: number;
+	sessionCount: number;
+	bashCallCount: number;
+	achievements: string[];
 }
 
 export interface PersistedAgent {
@@ -70,6 +81,12 @@ export interface PersistedAgent {
 	tmuxSessionName?: string;
 	floorId?: FloorId;
 	cliType?: string;
+	/** 成長系統持久化欄位 */
+	xp?: number;
+	toolCallCount?: number;
+	sessionCount?: number;
+	bashCallCount?: number;
+	achievements?: string[];
 }
 
 /** 客戶端 → 伺服器的 Socket.IO 訊息型別 */
