@@ -15,8 +15,9 @@ import {
 	loadWallTiles,
 	loadCharacterSprites,
 	loadDefaultLayout,
+	loadLayoutTemplates,
 } from './assetLoader.js';
-import type { LoadedAssets, LoadedFloorTiles, LoadedWallTiles, LoadedCharacterSprites } from './assetLoader.js';
+import type { LoadedAssets, LoadedFloorTiles, LoadedWallTiles, LoadedCharacterSprites, LayoutTemplate } from './assetLoader.js';
 // layoutPersistence 保留供舊路徑備用
 import { loadBuildingConfig, loadFloorLayout, writeFloorLayout, addFloor as addBuildingFloor, removeFloor as removeBuildingFloor, renameFloor as renameBuildingFloor } from './buildingPersistence.js';
 import { closeAgent, removeAgent, sendExistingAgents, getAllProjectDirs, getProjectDirPath, resumeSession, recoverTmuxAgents, checkTmuxHealth, savePersistedAgents, extractProjectName } from './agentManager.js';
@@ -98,6 +99,7 @@ let cachedFloorTiles: LoadedFloorTiles | null = null;
 let cachedWallTiles: LoadedWallTiles | null = null;
 let cachedFurnitureAssets: LoadedAssets | null = null;
 let defaultLayout: Record<string, unknown> | null = null;
+let layoutTemplates: import('./assetLoader.js').LayoutTemplate[] = [];
 
 // ── 持久化輔助函式 ──────────────────────────────────────
 
@@ -234,6 +236,7 @@ async function main(): Promise<void> {
 
 	loadDashboardStats();
 	defaultLayout = await loadDefaultLayout(assetsRoot);
+	layoutTemplates = await loadLayoutTemplates(assetsRoot);
 	cachedCharSprites = await loadCharacterSprites(assetsRoot);
 	cachedFloorTiles = await loadFloorTiles(assetsRoot);
 	cachedWallTiles = await loadWallTiles(assetsRoot);
@@ -807,6 +810,26 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 		}
 		case 'saveFloorLayout': {
 			writeFloorLayout(msg.floorId, msg.layout);
+			break;
+		}
+		case 'requestLayoutTemplates': {
+			const templateList = layoutTemplates.map((tmpl: LayoutTemplate) => ({
+				id: tmpl.id,
+				name: tmpl.name,
+				cols: tmpl.layout.cols,
+				rows: tmpl.layout.rows,
+			}));
+			sender.postMessage({ type: 'layoutTemplatesList', templates: templateList });
+			break;
+		}
+		case 'loadLayoutTemplate': {
+			const tmpl = layoutTemplates.find((t: LayoutTemplate) => t.id === msg.templateId);
+			if (!tmpl) break;
+			const targetFloor = msg.floorId || (socket && socketFloors.get(socket.id)) || DEFAULT_FLOOR_ID;
+			writeFloorLayout(targetFloor, tmpl.layout);
+			// 廣播至同樓層的客戶端
+			ctx.floorSender(targetFloor).postMessage({ type: 'layoutLoaded', layout: tmpl.layout });
+			console.log(`[Pixel Agents] Loaded template "${tmpl.id}" for floor ${targetFloor}`);
 			break;
 		}
 		case 'addFloor': {

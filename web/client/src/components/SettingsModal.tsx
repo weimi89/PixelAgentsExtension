@@ -48,7 +48,6 @@ export function SettingsModal({ isOpen, onClose, isDebugMode, onToggleDebugMode,
   const [lanEnabled, setLanEnabled] = useState(false)
   const [lanName, setLanName] = useState('')
   const lanNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
   // Escape 鍵關閉
   useEffect(() => {
     if (!isOpen) return

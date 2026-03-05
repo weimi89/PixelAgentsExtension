@@ -1,7 +1,7 @@
 import { TileType, MAX_COLS, MAX_ROWS } from '../types.js'
 import { DEFAULT_NEUTRAL_COLOR } from '../../constants.js'
 import type { TileType as TileTypeVal, OfficeLayout, PlacedFurniture, FloorColor } from '../types.js'
-import { getCatalogEntry, getRotatedType, getToggledType } from '../layout/furnitureCatalog.js'
+import { getCatalogEntry, getRotatedType, getToggledType, getFlippedType, getVerticalFlippedType } from '../layout/furnitureCatalog.js'
 import { getPlacementBlockedTiles } from '../layout/layoutSerializer.js'
 
 // deskTiles 模組級快取（避免每次 canPlaceFurniture 重建）
@@ -74,6 +74,30 @@ export function moveFurniture(layout: OfficeLayout, uid: string, newCol: number,
   return {
     ...layout,
     furniture: layout.furniture.map((f) => (f.uid === uid ? { ...f, col: newCol, row: newRow } : f)),
+  }
+}
+
+/** 水平翻轉家具。返回新佈局（不可變）。 */
+export function flipFurniture(layout: OfficeLayout, uid: string): OfficeLayout {
+  const item = layout.furniture.find((f) => f.uid === uid)
+  if (!item) return layout
+  const newType = getFlippedType(item.type)
+  if (!newType) return layout
+  return {
+    ...layout,
+    furniture: layout.furniture.map((f) => (f.uid === uid ? { ...f, type: newType } : f)),
+  }
+}
+
+/** 垂直翻轉家具。返回新佈局（不可變）。 */
+export function vflipFurniture(layout: OfficeLayout, uid: string): OfficeLayout {
+  const item = layout.furniture.find((f) => f.uid === uid)
+  if (!item) return layout
+  const newType = getVerticalFlippedType(item.type)
+  if (!newType) return layout
+  return {
+    ...layout,
+    furniture: layout.furniture.map((f) => (f.uid === uid ? { ...f, type: newType } : f)),
   }
 }
 

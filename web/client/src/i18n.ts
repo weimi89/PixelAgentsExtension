@@ -87,16 +87,16 @@ export const t = {
   // 已斷線 (tmux)
   detached: '已斷線',
 
-  // 工作階段選擇器
-  sessions: '工作階段',
-  browseSessions: '瀏覽過去的工作階段',
-  noSessions: '沒有找到工作階段',
+  // 工作選擇器
+  sessions: '工作',
+  browseSessions: '瀏覽過去的工作',
+  noSessions: '沒有找到工作',
   resumeSession: '恢復',
   activeSession: '進行中',
   loadingSessions: '載入中...',
   sessionProject: '專案',
-  searchSessions: '搜尋工作階段...',
-  noMatchingSessions: '沒有符合的工作階段',
+  searchSessions: '搜尋工作...',
+  noMatchingSessions: '沒有符合的工作',
 
   // 專案排除
   hideProject: '隱藏',
@@ -118,6 +118,24 @@ export const t = {
   timeAgoHours: (n: number) => `${n} 小時前`,
   timeAgoDays: (n: number) => `${n} 天前`,
   timeAgoMonths: (n: number) => `${n} 個月前`,
+
+  // 佈局模板
+  layoutTemplates: '空間',
+  loadTemplate: '套用',
+  templateClassicOffice: '經典辦公室',
+  templateOpenPlan: '開放空間',
+  templateCoworking: '共享工作室',
+  templateMinimal: '簡約小室',
+  templateLShapeStudio: 'L 型工作室',
+  templateConferenceCenter: '會議中心',
+  templateMazeHall: '迷宮大廳',
+  templateTwinWing: '雙翼大樓',
+  templateRingOffice: '環形辦公室',
+  templateCubicleFarm: '格子間',
+  templateTerraced: '階梯式',
+  templateGrandPlaza: '大廳廣場',
+  templateConfirmLoad: '確定套用？佈局將被覆蓋。',
+  templateTargetFloor: '套用到：',
 
   // 佈局匯入驗證
   invalidLayoutFile: '無效的佈局檔案',
@@ -229,7 +247,7 @@ export const t = {
   terminalConnectionError: '終端連線失敗',
   terminalDisconnected: '終端已斷線',
   terminalExited: '終端已結束',
-  terminalNoTmux: '此代理沒有 tmux 工作階段',
+  terminalNoTmux: '此代理沒有 tmux 工作',
 
   // 行為編輯器
   behavior: '行為',

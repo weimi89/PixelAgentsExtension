@@ -29,6 +29,8 @@ interface BottomToolbarProps {
   onToggleSettings: () => void
   isBehaviorEditorOpen: boolean
   onToggleBehaviorEditor: () => void
+  isTemplatesOpen: boolean
+  onToggleTemplates: () => void
   // 錄製/回放
   recorderState: RecordingState
   recordingDuration: number
@@ -96,6 +98,8 @@ export const BottomToolbar = memo(function BottomToolbar({
   onToggleSettings,
   isBehaviorEditorOpen,
   onToggleBehaviorEditor,
+  isTemplatesOpen,
+  onToggleTemplates,
   recorderState,
   recordingDuration,
   playbackProgress,
@@ -171,6 +175,23 @@ export const BottomToolbar = memo(function BottomToolbar({
         title={t.behaviorEditor}
       >
         {t.behavior}
+      </button>
+      <button
+        onClick={onToggleTemplates}
+        onMouseEnter={() => setHovered('templates')}
+        onMouseLeave={() => setHovered(null)}
+        aria-pressed={isTemplatesOpen}
+        style={
+          isTemplatesOpen
+            ? { ...btnActive }
+            : {
+                ...btnBase,
+                background: hovered === 'templates' ? 'var(--pixel-btn-hover-bg)' : btnBase.background,
+              }
+        }
+        title={t.layoutTemplates}
+      >
+        {t.layoutTemplates}
       </button>
       <button
         onClick={onToggleEditMode}

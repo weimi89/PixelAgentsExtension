@@ -4,9 +4,9 @@ import type { EditorState } from '../office/editor/editorState.js'
 import { EditTool } from '../office/types.js'
 import { TileType } from '../office/types.js'
 import type { OfficeLayout, EditTool as EditToolType, TileType as TileTypeVal, FloorColor, PlacedFurniture } from '../office/types.js'
-import { paintTile, placeFurniture, removeFurniture, moveFurniture, rotateFurniture, toggleFurnitureState, updateFurnitureText, canPlaceFurniture, getWallPlacementRow, expandLayout } from '../office/editor/editorActions.js'
+import { paintTile, placeFurniture, removeFurniture, moveFurniture, rotateFurniture, flipFurniture, vflipFurniture, toggleFurnitureState, updateFurnitureText, canPlaceFurniture, getWallPlacementRow, expandLayout } from '../office/editor/editorActions.js'
 import type { ExpandDirection } from '../office/editor/editorActions.js'
-import { getCatalogEntry, getRotatedType, getToggledType } from '../office/layout/furnitureCatalog.js'
+import { getCatalogEntry, getRotatedType, getToggledType, getFlippedType, getVerticalFlippedType } from '../office/layout/furnitureCatalog.js'
 import { defaultZoom } from '../office/toolUtils.js'
 import { vscode } from '../socketApi.js'
 import { LAYOUT_SAVE_DEBOUNCE_MS, ZOOM_MIN, ZOOM_MAX } from '../constants.js'
@@ -29,6 +29,8 @@ export interface EditorActions {
   handleFurnitureTypeChange: (type: string) => void // FurnitureType 列舉或素材 ID
   handleDeleteSelected: () => void
   handleRotateSelected: () => void
+  handleFlipSelected: () => void
+  handleVFlipSelected: () => void
   handleToggleState: () => void
   handleUndo: () => void
   handleRedo: () => void
@@ -257,6 +259,46 @@ export function useEditorActions(
     if (!uid) return
     const os = getOfficeState()
     const newLayout = rotateFurniture(os.getLayout(), uid, 'cw')
+    if (newLayout !== os.getLayout()) {
+      applyEdit(newLayout)
+    }
+  }, [getOfficeState, editorState, applyEdit])
+
+  const handleFlipSelected = useCallback(() => {
+    // 若在家具放置模式，翻轉所選類型
+    if (editorState.activeTool === EditTool.FURNITURE_PLACE) {
+      const flipped = getFlippedType(editorState.selectedFurnitureType)
+      if (flipped) {
+        editorState.selectedFurnitureType = flipped
+        setEditorTick((n) => n + 1)
+      }
+      return
+    }
+    // 否則翻轉已選取的放置家具
+    const uid = editorState.selectedFurnitureUid
+    if (!uid) return
+    const os = getOfficeState()
+    const newLayout = flipFurniture(os.getLayout(), uid)
+    if (newLayout !== os.getLayout()) {
+      applyEdit(newLayout)
+    }
+  }, [getOfficeState, editorState, applyEdit])
+
+  const handleVFlipSelected = useCallback(() => {
+    // 若在家具放置模式，垂直翻轉所選類型
+    if (editorState.activeTool === EditTool.FURNITURE_PLACE) {
+      const vflipped = getVerticalFlippedType(editorState.selectedFurnitureType)
+      if (vflipped) {
+        editorState.selectedFurnitureType = vflipped
+        setEditorTick((n) => n + 1)
+      }
+      return
+    }
+    // 否則垂直翻轉已選取的放置家具
+    const uid = editorState.selectedFurnitureUid
+    if (!uid) return
+    const os = getOfficeState()
+    const newLayout = vflipFurniture(os.getLayout(), uid)
     if (newLayout !== os.getLayout()) {
       applyEdit(newLayout)
     }
@@ -542,6 +584,8 @@ export function useEditorActions(
     handleFurnitureTypeChange,
     handleDeleteSelected,
     handleRotateSelected,
+    handleFlipSelected,
+    handleVFlipSelected,
     handleToggleState,
     handleUndo,
     handleRedo,

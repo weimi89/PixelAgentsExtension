@@ -235,6 +235,39 @@ export async function loadFloorTiles(assetsRoot: string): Promise<LoadedFloorTil
 	}
 }
 
+export interface LayoutTemplate {
+	id: string;
+	name: string;
+	layout: Record<string, unknown>;
+}
+
+export async function loadLayoutTemplates(assetsRoot: string): Promise<LayoutTemplate[]> {
+	const templatesDir = path.join(assetsRoot, 'assets', 'layout-templates');
+	if (!fs.existsSync(templatesDir)) {
+		console.log('[AssetLoader] No layout-templates directory found');
+		return [];
+	}
+	const templates: LayoutTemplate[] = [];
+	try {
+		const entries = fs.readdirSync(templatesDir);
+		for (const entry of entries) {
+			if (!entry.endsWith('.json')) continue;
+			try {
+				const content = await fsp.readFile(path.join(templatesDir, entry), 'utf-8');
+				const layout = JSON.parse(content) as Record<string, unknown>;
+				const id = entry.replace('.json', '');
+				templates.push({ id, name: id, layout });
+			} catch (err) {
+				console.warn(`[AssetLoader] Error loading template ${entry}: ${err instanceof Error ? err.message : err}`);
+			}
+		}
+		console.log(`[AssetLoader] Loaded ${templates.length} layout templates`);
+	} catch (err) {
+		console.error(`[AssetLoader] Error reading templates directory: ${err instanceof Error ? err.message : err}`);
+	}
+	return templates;
+}
+
 export async function loadCharacterSprites(assetsRoot: string): Promise<LoadedCharacterSprites | null> {
 	try {
 		const charDir = path.join(assetsRoot, 'assets', 'characters');

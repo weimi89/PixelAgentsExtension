@@ -7,6 +7,8 @@ export function useEditorKeyboard(
   editorState: EditorState,
   onDeleteSelected: () => void,
   onRotateSelected: () => void,
+  onFlipSelected: () => void,
+  onVFlipSelected: () => void,
   onToggleState: () => void,
   onUndo: () => void,
   onRedo: () => void,
@@ -43,6 +45,10 @@ export function useEditorKeyboard(
         }
       } else if (e.key === 'r' || e.key === 'R') {
         onRotateSelected()
+      } else if (e.key === 'f' || e.key === 'F') {
+        onFlipSelected()
+      } else if (e.key === 'v' || e.key === 'V') {
+        onVFlipSelected()
       } else if (e.key === 't' || e.key === 'T') {
         onToggleState()
       } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
@@ -58,5 +64,5 @@ export function useEditorKeyboard(
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [isEditMode, editorState, onDeleteSelected, onRotateSelected, onToggleState, onUndo, onRedo, onEditorTick, onCloseEditMode])
+  }, [isEditMode, editorState, onDeleteSelected, onRotateSelected, onFlipSelected, onVFlipSelected, onToggleState, onUndo, onRedo, onEditorTick, onCloseEditMode])
 }

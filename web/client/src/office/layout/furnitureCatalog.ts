@@ -146,6 +146,33 @@ let dynamicCategories: FurnitureCategory[] | null = null
  * 建構完成後，所有 getCatalog* 函式使用動態目錄。
  * 僅使用自訂素材（素材載入時排除硬編碼家具）。
  */
+// ── 精靈圖自動翻轉/旋轉 ─────────────────────────────────────
+/** 水平翻轉精靈圖（左右鏡像） */
+function flipSpriteH(sprite: SpriteData): SpriteData {
+  return sprite.map((row) => [...row].reverse())
+}
+
+/** 垂直翻轉精靈圖（上下鏡像） */
+function flipSpriteV(sprite: SpriteData): SpriteData {
+  return [...sprite].reverse()
+}
+
+/** 90° 順時針旋轉精靈圖（交換 W/H） */
+function rotateSpriteClockwise(sprite: SpriteData): SpriteData {
+  const h = sprite.length
+  if (h === 0) return []
+  const w = sprite[0].length
+  const result: string[][] = []
+  for (let x = 0; x < w; x++) {
+    const newRow: string[] = []
+    for (let y = h - 1; y >= 0; y--) {
+      newRow.push(sprite[y][x])
+    }
+    result.push(newRow)
+  }
+  return result
+}
+
 export function buildDynamicCatalog(assets: LoadedAssetData): boolean {
   if (!assets?.catalog || !assets?.sprites) return false
 
@@ -267,6 +294,167 @@ export function buildDynamicCatalog(assets: LoadedAssetData): boolean {
     }
   }
 
+  // ── 自動旋轉：為沒有旋轉群組的家具生成翻轉/旋轉變體 ──
+  const autoRotatedIds = new Set<string>()
+  const hardcodedAutoEntries: CatalogEntryWithCategory[] = []
+
+  // 先為硬編碼家具生成自動旋轉
+  for (const entry of FURNITURE_CATALOG) {
+    if (rotationGroups.has(entry.type)) continue
+    if (entry.isPixelText) continue // 像素文字不旋轉
+    const sprite = entry.sprite
+    if (!sprite || sprite.length === 0) continue
+
+    const isSquare = entry.footprintW === entry.footprintH
+    const flippedSprite = flipSpriteH(sprite)
+    const flippedId = `${entry.type}__AUTO_FLIP`
+    const vflippedSprite = flipSpriteV(sprite)
+    const vflippedId = `${entry.type}__AUTO_VFLIP`
+
+    const flippedEntry: CatalogEntryWithCategory = {
+      ...entry,
+      type: flippedId,
+      label: entry.label + ' (flip)',
+      sprite: flippedSprite,
+    }
+    const vflippedEntry: CatalogEntryWithCategory = {
+      ...entry,
+      type: vflippedId,
+      label: entry.label + ' (vflip)',
+      sprite: vflippedSprite,
+    }
+    autoRotatedIds.add(flippedId)
+    autoRotatedIds.add(vflippedId)
+
+    if (isSquare) {
+      const cw90Sprite = rotateSpriteClockwise(sprite)
+      const cw270Sprite = rotateSpriteClockwise(rotateSpriteClockwise(rotateSpriteClockwise(sprite)))
+      const cw90Id = `${entry.type}__AUTO_CW90`
+      const cw270Id = `${entry.type}__AUTO_CW270`
+
+      const cw90Entry: CatalogEntryWithCategory = { ...entry, type: cw90Id, label: entry.label + ' (90°)', sprite: cw90Sprite }
+      const cw270Entry: CatalogEntryWithCategory = { ...entry, type: cw270Id, label: entry.label + ' (270°)', sprite: cw270Sprite }
+      autoRotatedIds.add(cw90Id)
+      autoRotatedIds.add(cw270Id)
+
+      hardcodedAutoEntries.push(flippedEntry, vflippedEntry, cw90Entry, cw270Entry)
+
+      const members: Record<string, string> = { front: entry.type, right: cw90Id, back: flippedId, left: cw270Id }
+      const rg: RotationGroup = { orientations: ['front', 'right', 'back', 'left'], members }
+      rotationGroups.set(entry.type, rg)
+      rotationGroups.set(flippedId, rg)
+      rotationGroups.set(cw90Id, rg)
+      rotationGroups.set(cw270Id, rg)
+    } else {
+      hardcodedAutoEntries.push(flippedEntry, vflippedEntry)
+      const members: Record<string, string> = { front: entry.type, back: flippedId }
+      const rg: RotationGroup = { orientations: ['front', 'back'], members }
+      rotationGroups.set(entry.type, rg)
+      rotationGroups.set(flippedId, rg)
+    }
+  }
+
+  // 再為動態載入的家具生成自動旋轉
+  for (const asset of assets.catalog) {
+    if (asset.groupId) continue // 已有手動旋轉群組
+    if (rotationGroups.has(asset.id)) continue // 已在旋轉群組中
+    const sprite = assets.sprites[asset.id]
+    if (!sprite) continue
+
+    const isSquare = asset.footprintW === asset.footprintH
+    const flippedSprite = flipSpriteH(sprite)
+    const flippedId = `${asset.id}__AUTO_FLIP`
+    const vflippedSprite = flipSpriteV(sprite)
+    const vflippedId = `${asset.id}__AUTO_VFLIP`
+
+    // 註冊翻轉精靈圖到 assets.sprites（供渲染使用）
+    assets.sprites[flippedId] = flippedSprite
+    assets.sprites[vflippedId] = vflippedSprite
+
+    // 建立水平翻轉的目錄條目
+    allEntries.push({
+      type: flippedId,
+      label: asset.label + ' (flip)',
+      footprintW: asset.footprintW,
+      footprintH: asset.footprintH,
+      sprite: flippedSprite,
+      isDesk: asset.isDesk,
+      category: (asset.category || 'misc') as FurnitureCategory,
+      ...(asset.canPlaceOnSurfaces ? { canPlaceOnSurfaces: true } : {}),
+      ...(asset.backgroundTiles ? { backgroundTiles: asset.backgroundTiles } : {}),
+      ...(asset.canPlaceOnWalls ? { canPlaceOnWalls: true } : {}),
+    })
+    // 建立垂直翻轉的目錄條目
+    allEntries.push({
+      type: vflippedId,
+      label: asset.label + ' (vflip)',
+      footprintW: asset.footprintW,
+      footprintH: asset.footprintH,
+      sprite: vflippedSprite,
+      isDesk: asset.isDesk,
+      category: (asset.category || 'misc') as FurnitureCategory,
+      ...(asset.canPlaceOnSurfaces ? { canPlaceOnSurfaces: true } : {}),
+      ...(asset.backgroundTiles ? { backgroundTiles: asset.backgroundTiles } : {}),
+      ...(asset.canPlaceOnWalls ? { canPlaceOnWalls: true } : {}),
+    })
+    autoRotatedIds.add(flippedId)
+    autoRotatedIds.add(vflippedId)
+
+    if (isSquare) {
+      // 正方形佔地：可以做 90° 旋轉，生成 4 個方向
+      const cw90Sprite = rotateSpriteClockwise(sprite)
+      const cw270Sprite = rotateSpriteClockwise(rotateSpriteClockwise(rotateSpriteClockwise(sprite)))
+      const cw90Id = `${asset.id}__AUTO_CW90`
+      const cw270Id = `${asset.id}__AUTO_CW270`
+
+      assets.sprites[cw90Id] = cw90Sprite
+      assets.sprites[cw270Id] = cw270Sprite
+
+      allEntries.push({
+        type: cw90Id, label: asset.label + ' (90°)',
+        footprintW: asset.footprintW, footprintH: asset.footprintH,
+        sprite: cw90Sprite, isDesk: asset.isDesk,
+        category: (asset.category || 'misc') as FurnitureCategory,
+        ...(asset.canPlaceOnSurfaces ? { canPlaceOnSurfaces: true } : {}),
+        ...(asset.backgroundTiles ? { backgroundTiles: asset.backgroundTiles } : {}),
+        ...(asset.canPlaceOnWalls ? { canPlaceOnWalls: true } : {}),
+      })
+      allEntries.push({
+        type: cw270Id, label: asset.label + ' (270°)',
+        footprintW: asset.footprintW, footprintH: asset.footprintH,
+        sprite: cw270Sprite, isDesk: asset.isDesk,
+        category: (asset.category || 'misc') as FurnitureCategory,
+        ...(asset.canPlaceOnSurfaces ? { canPlaceOnSurfaces: true } : {}),
+        ...(asset.backgroundTiles ? { backgroundTiles: asset.backgroundTiles } : {}),
+        ...(asset.canPlaceOnWalls ? { canPlaceOnWalls: true } : {}),
+      })
+      autoRotatedIds.add(cw90Id)
+      autoRotatedIds.add(cw270Id)
+
+      // 4 方向旋轉群組: front → right(90°) → back(flip) → left(270°)
+      const members: Record<string, string> = {
+        front: asset.id,
+        right: cw90Id,
+        back: flippedId,
+        left: cw270Id,
+      }
+      const rg: RotationGroup = { orientations: ['front', 'right', 'back', 'left'], members }
+      rotationGroups.set(asset.id, rg)
+      rotationGroups.set(flippedId, rg)
+      rotationGroups.set(cw90Id, rg)
+      rotationGroups.set(cw270Id, rg)
+    } else {
+      // 非正方形佔地：只做水平翻轉（2 方向）
+      const members: Record<string, string> = {
+        front: asset.id,
+        back: flippedId,
+      }
+      const rg: RotationGroup = { orientations: ['front', 'back'], members }
+      rotationGroups.set(asset.id, rg)
+      rotationGroups.set(flippedId, rg)
+    }
+  }
+
   // 追蹤 "on" 變體 ID 以從可見目錄中排除
   const onStateIds = new Set<string>()
   for (const asset of assets.catalog) {
@@ -274,10 +462,11 @@ export function buildDynamicCatalog(assets: LoadedAssetData): boolean {
   }
 
   // 儲存完整內部目錄（所有變體 — 供 getCatalogEntry 查詢使用）
-  internalCatalog = allEntries
+  // 合併硬編碼目錄（含自動旋轉變體）+ 動態載入的素材
+  internalCatalog = [...FURNITURE_CATALOG, ...hardcodedAutoEntries, ...allEntries]
 
-  // 可見目錄：排除非 front 變體和 "on" 狀態變體
-  const visibleEntries = allEntries.filter((e) => !nonFrontIds.has(e.type) && !onStateIds.has(e.type))
+  // 可見目錄：排除非 front 變體、"on" 狀態變體和自動旋轉變體
+  const visibleEntries = allEntries.filter((e) => !nonFrontIds.has(e.type) && !onStateIds.has(e.type) && !autoRotatedIds.has(e.type))
 
   // 移除群組變體標籤的朝向/狀態後綴
   for (const entry of visibleEntries) {
@@ -289,8 +478,9 @@ export function buildDynamicCatalog(assets: LoadedAssetData): boolean {
     }
   }
 
-  dynamicCatalog = visibleEntries
-  dynamicCategories = Array.from(new Set(visibleEntries.map((e) => e.category)))
+  // 合併：硬編碼家具 + 動態載入的可見家具
+  dynamicCatalog = [...FURNITURE_CATALOG, ...visibleEntries]
+  dynamicCategories = Array.from(new Set(dynamicCatalog.map((e) => e.category)))
     .filter((c): c is FurnitureCategory => !!c)
     .sort()
 
@@ -375,6 +565,43 @@ export function getOnStateType(currentType: string): string {
 /** 若此類型有 "off" 變體則返回，否則返回原類型不變。 */
 export function getOffStateType(currentType: string): string {
   return onToOff.get(currentType) ?? currentType
+}
+
+/** 返回水平翻轉後的素材 ID，若不可翻轉則返回 null。 */
+export function getFlippedType(currentType: string): string | null {
+  // 自動翻轉變體的命名規則：XXX__AUTO_FLIP
+  const flipSuffix = '__AUTO_FLIP'
+  if (currentType.endsWith(flipSuffix)) {
+    // 已是翻轉版本 → 返回原始
+    return currentType.slice(0, -flipSuffix.length)
+  }
+  // 嘗試找到翻轉版本
+  const flippedId = `${currentType}${flipSuffix}`
+  const group = rotationGroups.get(currentType)
+  if (group) {
+    // 在旋轉群組中找 back（翻轉位置）
+    const backId = group.members['back']
+    if (backId && backId !== currentType) return backId
+  }
+  // 檢查翻轉 ID 是否存在於目錄中
+  if (getCatalogEntry(flippedId)) return flippedId
+  return null
+}
+
+/** 若指定的家具類型可水平翻轉則返回 true。 */
+export function isFlippable(type: string): boolean {
+  return getFlippedType(type) !== null
+}
+
+/** 返回垂直翻轉後的素材 ID，若不可翻轉則返回 null。 */
+export function getVerticalFlippedType(currentType: string): string | null {
+  const vflipSuffix = '__AUTO_VFLIP'
+  if (currentType.endsWith(vflipSuffix)) {
+    return currentType.slice(0, -vflipSuffix.length)
+  }
+  const vflippedId = `${currentType}${vflipSuffix}`
+  if (getCatalogEntry(vflippedId)) return vflippedId
+  return null
 }
 
 /** 若指定的家具類型屬於旋轉群組則返回 true。 */

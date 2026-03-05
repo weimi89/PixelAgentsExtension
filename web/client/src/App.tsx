@@ -27,6 +27,7 @@ import { ContextMenu } from './components/ContextMenu.js'
 import type { ContextMenuAction } from './components/ContextMenu.js'
 import { TerminalPanel } from './components/TerminalPanel.js'
 import { BehaviorEditorModal } from './components/BehaviorEditorModal.js'
+import { LayoutTemplatesPanel } from './components/LayoutTemplatesPanel.js'
 import { RecordingListModal } from './components/RecordingListModal.js'
 import { Recorder } from './office/engine/recorder.js'
 import type { RecordingState, RecordingFrame } from './office/engine/recorder.js'
@@ -195,6 +196,8 @@ function App() {
     editorState,
     editor.handleDeleteSelected,
     editor.handleRotateSelected,
+    editor.handleFlipSelected,
+    editor.handleVFlipSelected,
     editor.handleToggleState,
     editor.handleUndo,
     editor.handleRedo,
@@ -369,6 +372,8 @@ function App() {
         onToggleSettings={panels.handleToggleSettings}
         isBehaviorEditorOpen={panels.isBehaviorEditorOpen}
         onToggleBehaviorEditor={panels.handleToggleBehaviorEditor}
+        isTemplatesOpen={panels.isTemplatesOpen}
+        onToggleTemplates={panels.handleToggleTemplates}
         recorderState={recorderState}
         recordingDuration={recordingDuration}
         playbackProgress={playbackProgress}
@@ -402,6 +407,13 @@ function App() {
       <BehaviorEditorModal
         isOpen={panels.isBehaviorEditorOpen}
         onClose={panels.handleToggleBehaviorEditor}
+      />
+
+      <LayoutTemplatesPanel
+        isOpen={panels.isTemplatesOpen}
+        onClose={panels.handleToggleTemplates}
+        floors={building?.floors ?? []}
+        currentFloorId={currentFloorId}
       />
 
       <RecordingListModal
@@ -575,12 +587,12 @@ function App() {
             os.cameraFollowId = interaction.contextMenu!.agentId
           }})
           if (building && building.floors.length > 1) {
-            actions.push({ label: t.contextMoveFloor, onClick: () => {
-              const targetFloor = building.floors.find((f) => f.id !== currentFloorId)
-              if (targetFloor) {
-                vscode.postMessage({ type: 'moveAgentToFloor', agentId: interaction.contextMenu!.agentId, targetFloorId: targetFloor.id })
-              }
-            }})
+            for (const floor of building.floors) {
+              if (floor.id === currentFloorId) continue
+              actions.push({ label: `${t.contextMoveFloor} → ${floor.name || floor.id}`, onClick: () => {
+                vscode.postMessage({ type: 'moveAgentToFloor', agentId: interaction.contextMenu!.agentId, targetFloorId: floor.id })
+              }})
+            }
           }
           actions.push({ label: t.setTeam, onClick: () => {
             const current = agentTeams[interaction.contextMenu!.agentId] || ''
