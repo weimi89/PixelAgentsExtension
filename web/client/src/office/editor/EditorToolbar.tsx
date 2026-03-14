@@ -219,6 +219,7 @@ export const EditorToolbar = memo(function EditorToolbar({
 
   return (
     <div
+      className="pixel-editor-toolbar"
       style={{
         position: 'absolute',
         bottom: 68,

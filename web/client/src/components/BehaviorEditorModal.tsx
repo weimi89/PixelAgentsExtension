@@ -175,7 +175,7 @@ export const BehaviorEditorModal = memo(function BehaviorEditorModal({
 
   return (
     <div style={overlayStyle} onClick={onClose}>
-      <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+      <div className="pixel-modal-dialog" style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontSize: '24px', marginBottom: 12 }}>{t.behaviorEditor}</div>
 
         {/* 漫遊行為權重 */}

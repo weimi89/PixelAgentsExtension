@@ -1,9 +1,108 @@
 import { useState, memo } from 'react'
 import { SettingsModal } from './SettingsModal.js'
 import { FloorSelector } from './FloorSelector.js'
+import { useDeviceType } from '../hooks/useDeviceType.js'
 import { t } from '../i18n.js'
 import type { FloorConfig } from '../types/messages.js'
 import type { RecordingState } from '../office/engine/recorder.js'
+
+// ── 像素風格 SVG 圖示（18x18）─────────────────────────────
+const S = 18
+const iconStyle: React.CSSProperties = { display: 'block' }
+
+/** 大樓 — 建築物輪廓 */
+function IconBuilding() {
+  return (
+    <svg width={S} height={S} viewBox="0 0 18 18" fill="none" style={iconStyle}>
+      <rect x="3" y="4" width="12" height="12" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <rect x="6" y="7" width="2" height="2" fill="currentColor" />
+      <rect x="10" y="7" width="2" height="2" fill="currentColor" />
+      <rect x="6" y="11" width="2" height="2" fill="currentColor" />
+      <rect x="10" y="11" width="2" height="2" fill="currentColor" />
+      <line x1="9" y1="2" x2="9" y2="4" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+/** 儀表板 — 長條圖 */
+function IconDashboard() {
+  return (
+    <svg width={S} height={S} viewBox="0 0 18 18" fill="none" style={iconStyle}>
+      <rect x="2" y="10" width="3" height="6" fill="currentColor" />
+      <rect x="7" y="6" width="3" height="10" fill="currentColor" />
+      <rect x="12" y="2" width="3" height="14" fill="currentColor" />
+    </svg>
+  )
+}
+
+/** 辦公室 — 螢幕 */
+function IconOffice() {
+  return (
+    <svg width={S} height={S} viewBox="0 0 18 18" fill="none" style={iconStyle}>
+      <rect x="2" y="3" width="14" height="10" rx="0" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <line x1="9" y1="13" x2="9" y2="16" stroke="currentColor" strokeWidth="1.5" />
+      <line x1="5" y1="16" x2="13" y2="16" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+/** 工作 — 文件清單 */
+function IconSessions() {
+  return (
+    <svg width={S} height={S} viewBox="0 0 18 18" fill="none" style={iconStyle}>
+      <rect x="3" y="2" width="12" height="14" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <line x1="6" y1="6" x2="12" y2="6" stroke="currentColor" strokeWidth="1.5" />
+      <line x1="6" y1="9" x2="12" y2="9" stroke="currentColor" strokeWidth="1.5" />
+      <line x1="6" y1="12" x2="10" y2="12" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+/** 行為 — 滑桿 */
+function IconBehavior() {
+  return (
+    <svg width={S} height={S} viewBox="0 0 18 18" fill="none" style={iconStyle}>
+      <line x1="3" y1="5" x2="15" y2="5" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="7" cy="5" r="2" fill="currentColor" />
+      <line x1="3" y1="9" x2="15" y2="9" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="11" cy="9" r="2" fill="currentColor" />
+      <line x1="3" y1="13" x2="15" y2="13" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="6" cy="13" r="2" fill="currentColor" />
+    </svg>
+  )
+}
+
+/** 空間 — 方格佈局 */
+function IconTemplates() {
+  return (
+    <svg width={S} height={S} viewBox="0 0 18 18" fill="none" style={iconStyle}>
+      <rect x="2" y="2" width="6" height="6" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <rect x="10" y="2" width="6" height="6" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <rect x="2" y="10" width="6" height="6" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <rect x="10" y="10" width="6" height="6" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    </svg>
+  )
+}
+
+/** 佈局 — 鉛筆 */
+function IconEdit() {
+  return (
+    <svg width={S} height={S} viewBox="0 0 18 18" fill="none" style={iconStyle}>
+      <path d="M3 15L3 12L12 3L15 6L6 15Z" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <line x1="10" y1="5" x2="13" y2="8" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+/** 設定 — 齒輪 */
+function IconSettings() {
+  return (
+    <svg width={S} height={S} viewBox="0 0 18 18" fill="none" style={iconStyle}>
+      <circle cx="9" cy="9" r="3" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <path d="M9 2V4M9 14V16M2 9H4M14 9H16M4.2 4.2L5.6 5.6M12.4 12.4L13.8 13.8M13.8 4.2L12.4 5.6M5.6 12.4L4.2 13.8" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
 
 interface BottomToolbarProps {
   isEditMode: boolean
@@ -110,124 +209,41 @@ export const BottomToolbar = memo(function BottomToolbar({
   onSeekPlayback,
 }: BottomToolbarProps) {
   const [hovered, setHovered] = useState<string | null>(null)
+  const { isMobile } = useDeviceType()
+
+  // 行動版用圖示、桌面版用文字的按鈕輔助函式
+  const tbBtn = (key: string, text: string, tooltip: string, icon: React.ReactNode, onClick: () => void, isActive: boolean) => (
+    <button
+      key={key}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(key)}
+      onMouseLeave={() => setHovered(null)}
+      aria-pressed={isActive || undefined}
+      style={
+        isActive
+          ? { ...btnActive, padding: isMobile ? '6px' : btnActive.padding }
+          : {
+              ...btnBase,
+              padding: isMobile ? '6px' : btnBase.padding,
+              background: hovered === key ? 'var(--pixel-btn-hover-bg)' : btnBase.background,
+            }
+      }
+      title={tooltip}
+    >
+      {isMobile ? icon : text}
+    </button>
+  )
 
   return (
-    <div role="toolbar" aria-label={t.layout} style={panelStyle}>
-      <button
-        onClick={onToggleBuildingView}
-        onMouseEnter={() => setHovered('building')}
-        onMouseLeave={() => setHovered(null)}
-        aria-pressed={isBuildingViewOpen}
-        style={
-          isBuildingViewOpen
-            ? { ...btnActive }
-            : {
-                ...btnBase,
-                background: hovered === 'building' ? 'var(--pixel-btn-hover-bg)' : btnBase.background,
-              }
-        }
-        title={t.buildingPanel}
-      >
-        {t.building}
-      </button>
-      <button
-        onClick={onToggleDashboardView}
-        onMouseEnter={() => setHovered('dashboard')}
-        onMouseLeave={() => setHovered(null)}
-        aria-pressed={isDashboardView}
-        style={
-          isDashboardView
-            ? { ...btnActive }
-            : {
-                ...btnBase,
-                background: hovered === 'dashboard' ? 'var(--pixel-btn-hover-bg)' : btnBase.background,
-              }
-        }
-        title={t.dashboard}
-      >
-        {isDashboardView ? t.officeView : t.dashboard}
-      </button>
-      <button
-        onClick={onOpenSessionPicker}
-        onMouseEnter={() => setHovered('sessions')}
-        onMouseLeave={() => setHovered(null)}
-        style={{
-          ...btnBase,
-          background: hovered === 'sessions' ? 'var(--pixel-btn-hover-bg)' : btnBase.background,
-        }}
-        title={t.browseSessions}
-      >
-        {t.sessions}
-      </button>
-      <button
-        onClick={onToggleBehaviorEditor}
-        onMouseEnter={() => setHovered('behavior')}
-        onMouseLeave={() => setHovered(null)}
-        aria-pressed={isBehaviorEditorOpen}
-        style={
-          isBehaviorEditorOpen
-            ? { ...btnActive }
-            : {
-                ...btnBase,
-                background: hovered === 'behavior' ? 'var(--pixel-btn-hover-bg)' : btnBase.background,
-              }
-        }
-        title={t.behaviorEditor}
-      >
-        {t.behavior}
-      </button>
-      <button
-        onClick={onToggleTemplates}
-        onMouseEnter={() => setHovered('templates')}
-        onMouseLeave={() => setHovered(null)}
-        aria-pressed={isTemplatesOpen}
-        style={
-          isTemplatesOpen
-            ? { ...btnActive }
-            : {
-                ...btnBase,
-                background: hovered === 'templates' ? 'var(--pixel-btn-hover-bg)' : btnBase.background,
-              }
-        }
-        title={t.layoutTemplates}
-      >
-        {t.layoutTemplates}
-      </button>
-      <button
-        onClick={onToggleEditMode}
-        onMouseEnter={() => setHovered('edit')}
-        onMouseLeave={() => setHovered(null)}
-        aria-pressed={isEditMode}
-        style={
-          isEditMode
-            ? { ...btnActive }
-            : {
-                ...btnBase,
-                background: hovered === 'edit' ? 'var(--pixel-btn-hover-bg)' : btnBase.background,
-              }
-        }
-        title={t.editOfficeLayout}
-      >
-        {t.layout}
-      </button>
+    <div role="toolbar" aria-label={t.layout} className="pixel-bottom-toolbar" style={panelStyle}>
+      {tbBtn('building', t.building, t.buildingPanel, <IconBuilding />, onToggleBuildingView, isBuildingViewOpen)}
+      {tbBtn('dashboard', isDashboardView ? t.officeView : t.dashboard, t.dashboard, isDashboardView ? <IconOffice /> : <IconDashboard />, onToggleDashboardView, isDashboardView)}
+      {tbBtn('sessions', t.sessions, t.browseSessions, <IconSessions />, onOpenSessionPicker, false)}
+      {tbBtn('behavior', t.behavior, t.behaviorEditor, <IconBehavior />, onToggleBehaviorEditor, isBehaviorEditorOpen)}
+      {tbBtn('templates', t.layoutTemplates, t.layoutTemplates, <IconTemplates />, onToggleTemplates, isTemplatesOpen)}
+      {tbBtn('edit', t.layout, t.editOfficeLayout, <IconEdit />, onToggleEditMode, isEditMode)}
       <div style={{ position: 'relative' }}>
-        <button
-          onClick={onToggleSettings}
-          onMouseEnter={() => setHovered('settings')}
-          onMouseLeave={() => setHovered(null)}
-          aria-pressed={isSettingsOpen}
-          style={
-            isSettingsOpen
-              ? { ...btnActive }
-              : {
-                  ...btnBase,
-                  background: hovered === 'settings' ? 'var(--pixel-btn-hover-bg)' : btnBase.background,
-                }
-          }
-          title={t.settings}
-        >
-          {t.settings}
-        </button>
+        {tbBtn('settings', t.settings, t.settings, <IconSettings />, onToggleSettings, isSettingsOpen)}
         <SettingsModal
           isOpen={isSettingsOpen}
           onClose={onToggleSettings}

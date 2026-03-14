@@ -939,8 +939,11 @@ export function renderMinimap(
   if (layoutCols === 0 || layoutRows === 0) return null
 
   // 常數以 CSS 像素定義，乘以 DPR 得到設備像素
-  const maxSize = MINIMAP_MAX_SIZE * dpr
-  const minSize = MINIMAP_MIN_SIZE * dpr
+  // 行動裝置（CSS 寬度 < 768px）縮小迷你地圖
+  const cssWidth = canvasWidth / dpr
+  const mobileFactor = cssWidth < 768 ? 0.5 : 1
+  const maxSize = MINIMAP_MAX_SIZE * dpr * mobileFactor
+  const minSize = MINIMAP_MIN_SIZE * dpr * mobileFactor
   const tileMinPx = MINIMAP_TILE_MIN_PX * dpr
 
   // 計算 minimap 尺寸：適配地圖比例，限制在 MIN-MAX 範圍
@@ -961,7 +964,7 @@ export function renderMinimap(
   mmH = Math.round(mmH)
 
   const marginRight = MINIMAP_MARGIN * dpr
-  const marginBottom = MINIMAP_MARGIN_BOTTOM * dpr
+  const marginBottom = (cssWidth < 768 ? 60 : MINIMAP_MARGIN_BOTTOM) * dpr
   const mmX = canvasWidth - mmW - marginRight
   const mmY = canvasHeight - mmH - marginBottom
 

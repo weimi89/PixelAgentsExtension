@@ -71,6 +71,7 @@ function EditActionBar({ editor, editorState: es }: { editor: ReturnType<typeof 
 
   return (
     <div
+      className="pixel-edit-action-bar"
       style={{
         position: 'absolute',
         top: 8,
@@ -305,6 +306,7 @@ function App() {
       {/* 斷線指示器 */}
       {!connected && (
         <div
+          className="pixel-disconnected"
           style={{
             position: 'absolute',
             top: 8,
@@ -422,7 +424,7 @@ function App() {
         onPlay={handlePlayRecording}
       />
 
-      <ChatPanel messages={chatMessages} />
+      {!panels.isDashboardView && <ChatPanel messages={chatMessages} />}
 
       {!panels.isDashboardView && interaction.detailPanelAgentId != null && agents.includes(interaction.detailPanelAgentId) && (() => {
         // 組合代理資訊供面板使用
@@ -460,6 +462,7 @@ function App() {
 
       {!panels.isDashboardView && showRotateHint && (
         <div
+          className="pixel-rotate-hint"
           style={{
             position: 'absolute',
             top: 8,

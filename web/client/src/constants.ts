@@ -223,8 +223,16 @@ export const CHAT_PANEL_MAX_MESSAGES = 50
 // ── 儀表板 ────────────────────────────────────────────────────
 export const DASHBOARD_REFRESH_MS = 2000
 
-// ── 觸控 ────────────────────────────────────────────────────
+// ── 觸控與行動裝置 ──────────────────────────────────────────
 export const LONG_PRESS_DURATION_MS = 500
+export const MOBILE_BREAKPOINT_PX = 768
+export const TABLET_BREAKPOINT_PX = 1024
+export const TOUCH_TARGET_MIN_PX = 48
+export const TOUCH_PAN_THRESHOLD_PX = 8
+export const TOUCH_DOUBLE_TAP_MS = 300
+export const TOUCH_DOUBLE_TAP_DISTANCE_PX = 30
+export const TOUCH_PINCH_ZOOM_THRESHOLD = 30   // 雙指距離變化門檻（px）
+export const MOBILE_SWIPE_CLOSE_PX = 100        // 滑動關閉面板的門檻
 
 // ── 快取限制 ────────────────────────────────────────────────
 export const COLORIZE_CACHE_MAX_SIZE = 256

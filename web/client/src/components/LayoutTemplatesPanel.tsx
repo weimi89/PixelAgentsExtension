@@ -104,6 +104,7 @@ export function LayoutTemplatesPanel({ isOpen, onClose, floors, currentFloorId }
         role="dialog"
         aria-modal="true"
         aria-label={t.layoutTemplates}
+        className="pixel-modal-dialog"
         style={{
           position: 'fixed',
           top: '50%',

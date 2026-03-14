@@ -295,6 +295,7 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
 
   return (
     <div
+      className="pixel-detail-panel"
       style={{
         ...panelStyle,
         transform: visible ? 'translateX(0)' : 'translateX(100%)',

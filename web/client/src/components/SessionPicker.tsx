@@ -106,6 +106,7 @@ export function SessionPicker({ isOpen, onClose, sessions, onResume, isLoading, 
         role="dialog"
         aria-modal="true"
         aria-label={t.sessions}
+        className="pixel-modal-dialog"
         style={{
           position: 'fixed',
           top: '50%',

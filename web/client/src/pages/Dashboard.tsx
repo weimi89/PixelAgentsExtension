@@ -52,23 +52,23 @@ export function Dashboard() {
   const sortedTools = Object.entries(stats.toolDistribution).sort((a, b) => b[1] - a[1]).slice(0, 15)
 
   return (
-    <div style={containerStyle}>
+    <div className="pixel-dashboard" style={containerStyle}>
       {/* 標題列 */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h1 style={{ fontSize: '32px', color: 'var(--pixel-text)', margin: 0 }}>Pixel Agents {t.dashboard}</h1>
+      <div className="pixel-dashboard-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 8, flexWrap: 'wrap' }}>
+        <h1 style={{ fontSize: '32px', color: 'var(--pixel-text)', margin: 0 }}>{t.dashboard}</h1>
         <span style={{ fontSize: '24px', color: 'rgba(255,255,255,0.5)' }}>
           {clock.toLocaleTimeString()}
         </span>
       </div>
 
       {/* 統計卡片 */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', flex: 'none' }}>
+      <div className="pixel-dashboard-stats" style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', flex: 'none' }}>
         <StatCard label={t.totalAgents} value={stats.totalAgents} color="#5b8def" />
         <StatCard label={t.activeAgents} value={stats.activeAgents} color="#5bef7a" />
         <StatCard label={t.totalToolCalls} value={stats.totalToolCalls} color="#efcf5b" />
       </div>
 
-      <div style={{ display: 'flex', gap: 12, flex: 1, overflow: 'hidden' }}>
+      <div className="pixel-dashboard-body" style={{ display: 'flex', gap: 12, flex: 1, overflow: 'hidden' }}>
         {/* 左側：樓層 + 工具分布 */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
           {/* 樓層概覽 */}

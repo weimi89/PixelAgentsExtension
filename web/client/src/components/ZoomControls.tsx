@@ -98,6 +98,7 @@ export const ZoomControls = memo(function ZoomControls({ zoom, onZoomChange }: Z
 
       {/* 垂直排列的圓形按鈕 — 左上角 */}
       <div
+        className="pixel-zoom-controls"
         style={{
           position: 'absolute',
           top: 8,

@@ -76,6 +76,7 @@ export const ChatPanel = memo(function ChatPanel({ messages }: ChatPanelProps) {
 
   return (
     <div
+      className="pixel-chat-panel"
       style={{
         position: 'absolute',
         bottom: 50,

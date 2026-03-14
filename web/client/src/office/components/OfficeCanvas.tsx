@@ -6,7 +6,7 @@ import type { Recorder } from '../engine/recorder.js'
 import { startGameLoop } from '../engine/gameLoop.js'
 import { renderFrame, renderMinimap } from '../engine/renderer.js'
 import { TILE_SIZE, EditTool } from '../types.js'
-import { CAMERA_FOLLOW_LERP, CAMERA_FOLLOW_SNAP_THRESHOLD, ZOOM_MIN, ZOOM_MAX, ZOOM_SCROLL_THRESHOLD, PAN_MARGIN_FRACTION, LONG_PRESS_DURATION_MS } from '../../constants.js'
+import { CAMERA_FOLLOW_LERP, CAMERA_FOLLOW_SNAP_THRESHOLD, ZOOM_MIN, ZOOM_MAX, ZOOM_SCROLL_THRESHOLD, PAN_MARGIN_FRACTION, LONG_PRESS_DURATION_MS, TOUCH_PAN_THRESHOLD_PX, TOUCH_DOUBLE_TAP_MS, TOUCH_DOUBLE_TAP_DISTANCE_PX, TOUCH_PINCH_ZOOM_THRESHOLD } from '../../constants.js'
 import { getDayPhase, getDayNightOverlay } from '../engine/dayNightCycle.js'
 import { getCatalogEntry, isRotatable } from '../layout/furnitureCatalog.js'
 import { canPlaceFurniture, getWallPlacementRow } from '../editor/editorActions.js'
@@ -58,9 +58,14 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
   const minimapBoundsRef = useRef<MinimapBounds | null>(null)
   // 縮放滾動累加器，用於觸控板縮放靈敏度
   const zoomAccumulatorRef = useRef(0)
-  // 觸控長按
+  // 觸控手勢
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const touchStartPosRef = useRef<{ x: number; y: number } | null>(null)
+  const touchModeRef = useRef<'none' | 'pan' | 'pinch' | 'tap' | 'edit-drag'>('none')
+  const lastPinchDistRef = useRef(0)
+  const lastTouchCenterRef = useRef<{ x: number; y: number } | null>(null)
+  const doubleTapRef = useRef<{ time: number; x: number; y: number } | null>(null)
+  const touchStartTimeRef = useRef(0)
   // 錄製/回放
   const recorderRef = useRef(recorder)
   recorderRef.current = recorder
@@ -769,44 +774,355 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
     if (e.button === 1) e.preventDefault()
   }, [])
 
-  // 觸控長按：500ms 後觸發 walkToTile（模擬右鍵行為）
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (isEditMode || e.touches.length !== 1) return
-    const touch = e.touches[0]
-    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY }
-    longPressTimerRef.current = setTimeout(() => {
-      if (!touchStartPosRef.current) return
-      if (officeState.selectedAgentId !== null) {
-        const tile = screenToTile(touchStartPosRef.current.x, touchStartPosRef.current.y)
-        if (tile) {
-          officeState.walkToTile(officeState.selectedAgentId, tile.col, tile.row)
-        }
-      }
-      touchStartPosRef.current = null
-    }, LONG_PRESS_DURATION_MS)
-  }, [isEditMode, officeState, screenToTile])
+  // ── 觸控手勢系統 ──────────────────────────────────────────
 
-  const handleTouchEnd = useCallback(() => {
+  const cancelLongPress = useCallback(() => {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current)
       longPressTimerRef.current = null
     }
-    touchStartPosRef.current = null
   }, [])
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    // 手指移動超過 10px 取消長按
-    if (!touchStartPosRef.current || e.touches.length !== 1) {
-      handleTouchEnd()
+  const getTouchDistance = (t1: React.Touch, t2: React.Touch) => {
+    const dx = t1.clientX - t2.clientX
+    const dy = t1.clientY - t2.clientY
+    return Math.sqrt(dx * dx + dy * dy)
+  }
+
+  const getTouchCenter = (t1: React.Touch, t2: React.Touch) => ({
+    x: (t1.clientX + t2.clientX) / 2,
+    y: (t1.clientY + t2.clientY) / 2,
+  })
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault()
+    unlockAudio()
+    const touches = e.touches
+
+    if (touches.length === 2) {
+      // 雙指：開始 pinch-to-zoom + pan
+      cancelLongPress()
+      touchModeRef.current = 'pinch'
+      lastPinchDistRef.current = getTouchDistance(touches[0], touches[1])
+      lastTouchCenterRef.current = getTouchCenter(touches[0], touches[1])
+      // 中斷鏡頭追蹤
+      officeState.cameraFollowId = null
       return
     }
-    const touch = e.touches[0]
+
+    if (touches.length !== 1) return
+
+    const touch = touches[0]
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY }
+    touchStartTimeRef.current = Date.now()
+    touchModeRef.current = 'tap'
+
+    if (isEditMode) {
+      // 編輯模式：更新幽靈預覽位置
+      const tile = screenToTile(touch.clientX, touch.clientY)
+      if (tile) {
+        editorState.ghostCol = tile.col
+        editorState.ghostRow = tile.row
+      }
+
+      // 檢查刪除/旋轉按鈕命中
+      const pos = screenToWorld(touch.clientX, touch.clientY)
+      if (pos && hitTestRotateButton(pos.deviceX, pos.deviceY)) {
+        onRotateSelected()
+        touchModeRef.current = 'none'
+        return
+      }
+      if (pos && hitTestDeleteButton(pos.deviceX, pos.deviceY)) {
+        onDeleteSelected()
+        touchModeRef.current = 'none'
+        return
+      }
+
+      // SELECT 工具：檢查家具命中
+      const actAsSelect = editorState.activeTool === EditTool.SELECT ||
+        (editorState.activeTool === EditTool.FURNITURE_PLACE && editorState.selectedFurnitureType === '')
+      if (actAsSelect && tile) {
+        const layout = officeState.getLayout()
+        let hitFurniture = null as typeof layout.furniture[0] | null
+        for (const f of layout.furniture) {
+          const entry = getCatalogEntry(f.type)
+          if (!entry) continue
+          if (tile.col >= f.col && tile.col < f.col + entry.footprintW && tile.row >= f.row && tile.row < f.row + entry.footprintH) {
+            if (!hitFurniture || entry.canPlaceOnSurfaces) hitFurniture = f
+          }
+        }
+        if (hitFurniture) {
+          editorState.startDrag(hitFurniture.uid, tile.col, tile.row, tile.col - hitFurniture.col, tile.row - hitFurniture.row)
+          touchModeRef.current = 'edit-drag'
+          return
+        }
+      }
+    } else {
+      // 非編輯模式：設定長按計時器（walkToTile / context menu）
+      longPressTimerRef.current = setTimeout(() => {
+        if (!touchStartPosRef.current) return
+        const pos = screenToWorld(touchStartPosRef.current.x, touchStartPosRef.current.y)
+        if (pos) {
+          const hitId = officeState.getCharacterAt(pos.worldX, pos.worldY)
+          if (hitId !== null) {
+            // 長按角色：觸發右鍵選單
+            onContextMenuProp?.(hitId, touchStartPosRef.current.x, touchStartPosRef.current.y)
+            touchModeRef.current = 'none'
+            touchStartPosRef.current = null
+            return
+          }
+        }
+        if (officeState.selectedAgentId !== null) {
+          const tile = screenToTile(touchStartPosRef.current.x, touchStartPosRef.current.y)
+          if (tile) {
+            officeState.walkToTile(officeState.selectedAgentId, tile.col, tile.row)
+          }
+        }
+        touchModeRef.current = 'none'
+        touchStartPosRef.current = null
+      }, LONG_PRESS_DURATION_MS)
+    }
+  }, [isEditMode, officeState, editorState, screenToTile, screenToWorld, cancelLongPress, hitTestDeleteButton, hitTestRotateButton, onDeleteSelected, onRotateSelected, onContextMenuProp])
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault()
+    const touches = e.touches
+
+    // 雙指 → pinch + pan
+    if (touches.length === 2) {
+      if (touchModeRef.current !== 'pinch') {
+        // 從單指切換到雙指
+        cancelLongPress()
+        touchModeRef.current = 'pinch'
+        lastPinchDistRef.current = getTouchDistance(touches[0], touches[1])
+        lastTouchCenterRef.current = getTouchCenter(touches[0], touches[1])
+        // 取消編輯拖曳
+        editorState.isDragging = false
+        editorState.clearDrag()
+        return
+      }
+
+      const newDist = getTouchDistance(touches[0], touches[1])
+      const newCenter = getTouchCenter(touches[0], touches[1])
+
+      // Pinch zoom — 當距離變化超過門檻時步進
+      const distDelta = newDist - lastPinchDistRef.current
+      if (Math.abs(distDelta) > TOUCH_PINCH_ZOOM_THRESHOLD) {
+        const zoomDelta = distDelta > 0 ? 1 : -1
+        const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + zoomDelta))
+        if (newZoom !== zoom) {
+          onZoomChange(newZoom)
+        }
+        lastPinchDistRef.current = newDist
+      }
+
+      // 同時平移
+      if (lastTouchCenterRef.current) {
+        const dpr = window.devicePixelRatio || 1
+        const dx = (newCenter.x - lastTouchCenterRef.current.x) * dpr
+        const dy = (newCenter.y - lastTouchCenterRef.current.y) * dpr
+        officeState.cameraFollowId = null
+        panRef.current = clampPan(panRef.current.x + dx, panRef.current.y + dy)
+      }
+      lastTouchCenterRef.current = newCenter
+      return
+    }
+
+    if (touches.length !== 1) return
+    const touch = touches[0]
+
+    // 編輯模式拖曳（家具拖曳或繪製拖曳）
+    if (touchModeRef.current === 'edit-drag') {
+      const tile = screenToTile(touch.clientX, touch.clientY)
+      if (tile) {
+        editorState.ghostCol = tile.col
+        editorState.ghostRow = tile.row
+        if (editorState.dragUid && !editorState.isDragMoving) {
+          if (tile.col !== editorState.dragStartCol || tile.row !== editorState.dragStartRow) {
+            editorState.isDragMoving = true
+          }
+        }
+        // 繪製拖曳：持續觸發繪製
+        if (editorState.isDragging && !editorState.dragUid && (editorState.activeTool === EditTool.TILE_PAINT || editorState.activeTool === EditTool.WALL_PAINT || editorState.activeTool === EditTool.ERASE)) {
+          onEditorTileAction(tile.col, tile.row)
+        }
+      }
+      return
+    }
+
+    if (!touchStartPosRef.current) return
     const dx = touch.clientX - touchStartPosRef.current.x
     const dy = touch.clientY - touchStartPosRef.current.y
-    if (dx * dx + dy * dy > 100) {
-      handleTouchEnd()
+    const dist2 = dx * dx + dy * dy
+
+    // 超過門檻：從 tap 切換到 pan（或 edit-draw）
+    if (touchModeRef.current === 'tap' && dist2 > TOUCH_PAN_THRESHOLD_PX * TOUCH_PAN_THRESHOLD_PX) {
+      cancelLongPress()
+
+      if (isEditMode && (editorState.activeTool === EditTool.TILE_PAINT || editorState.activeTool === EditTool.WALL_PAINT || editorState.activeTool === EditTool.ERASE)) {
+        // 編輯繪製模式：開始拖曳繪製
+        touchModeRef.current = 'edit-drag'
+        editorState.isDragging = true
+        const tile = screenToTile(touch.clientX, touch.clientY)
+        if (tile) {
+          onEditorTileAction(tile.col, tile.row)
+        }
+        return
+      }
+
+      touchModeRef.current = 'pan'
+      officeState.cameraFollowId = null
     }
-  }, [handleTouchEnd])
+
+    // 平移模式
+    if (touchModeRef.current === 'pan') {
+      const dpr = window.devicePixelRatio || 1
+      const prevPos = touchStartPosRef.current
+      panRef.current = clampPan(
+        panRef.current.x + (touch.clientX - prevPos.x) * dpr,
+        panRef.current.y + (touch.clientY - prevPos.y) * dpr,
+      )
+      touchStartPosRef.current = { x: touch.clientX, y: touch.clientY }
+    }
+
+  }, [isEditMode, editorState, officeState, zoom, onZoomChange, panRef, clampPan, cancelLongPress, screenToTile, onEditorTileAction])
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    e.preventDefault()
+    cancelLongPress()
+
+    const mode = touchModeRef.current
+
+    // 編輯模式拖曳結束
+    if (mode === 'edit-drag') {
+      if (editorState.dragUid) {
+        if (editorState.isDragMoving) {
+          const ghostCol = editorState.ghostCol - editorState.dragOffsetCol
+          const ghostRow = editorState.ghostRow - editorState.dragOffsetRow
+          const draggedItem = officeState.getLayout().furniture.find((f) => f.uid === editorState.dragUid)
+          if (draggedItem) {
+            const valid = canPlaceFurniture(officeState.getLayout(), draggedItem.type, ghostCol, ghostRow, editorState.dragUid)
+            if (valid) onDragMove(editorState.dragUid, ghostCol, ghostRow)
+          }
+          editorState.clearSelection()
+        } else {
+          // 點擊（無移動）— 切換選取
+          if (editorState.selectedFurnitureUid === editorState.dragUid) {
+            editorState.clearSelection()
+          } else {
+            editorState.selectedFurnitureUid = editorState.dragUid
+          }
+        }
+        editorState.clearDrag()
+        onEditorSelectionChange()
+      }
+      editorState.isDragging = false
+      editorState.wallDragAdding = null
+      editorState.ghostCol = -1
+      editorState.ghostRow = -1
+      touchModeRef.current = 'none'
+      touchStartPosRef.current = null
+      return
+    }
+
+    // tap 模式 — 處理點擊和雙擊
+    if (mode === 'tap' && touchStartPosRef.current) {
+      const elapsed = Date.now() - touchStartTimeRef.current
+      const tapX = touchStartPosRef.current.x
+      const tapY = touchStartPosRef.current.y
+
+      // 檢查雙擊
+      const prev = doubleTapRef.current
+      if (prev && (Date.now() - prev.time) < TOUCH_DOUBLE_TAP_MS) {
+        const ddx = tapX - prev.x
+        const ddy = tapY - prev.y
+        if (ddx * ddx + ddy * ddy < TOUCH_DOUBLE_TAP_DISTANCE_PX * TOUCH_DOUBLE_TAP_DISTANCE_PX) {
+          // 雙擊：縮放切換
+          doubleTapRef.current = null
+          const dpr = window.devicePixelRatio || 1
+          const defaultZoom = Math.round(2 * dpr)
+          const newZoom = zoom === defaultZoom ? Math.min(ZOOM_MAX, defaultZoom + 2) : defaultZoom
+          onZoomChange(newZoom)
+          touchModeRef.current = 'none'
+          touchStartPosRef.current = null
+          return
+        }
+      }
+      doubleTapRef.current = { time: Date.now(), x: tapX, y: tapY }
+
+      // 短按 — 轉發點擊
+      if (elapsed < LONG_PRESS_DURATION_MS) {
+        if (isEditMode) {
+          const tile = screenToTile(tapX, tapY)
+          if (tile) {
+            // 家具放置/吸管/清除空白處理
+            const actAsSelect = editorState.activeTool === EditTool.SELECT ||
+              (editorState.activeTool === EditTool.FURNITURE_PLACE && editorState.selectedFurnitureType === '')
+            if (actAsSelect) {
+              editorState.clearSelection()
+              onEditorSelectionChange()
+            } else {
+              onEditorTileAction(tile.col, tile.row)
+            }
+          }
+        } else {
+          // 非編輯模式：模擬 click
+          const pos = screenToWorld(tapX, tapY)
+          if (pos) {
+            const hitId = officeState.getCharacterAt(pos.worldX, pos.worldY)
+            if (hitId !== null) {
+              officeState.dismissBubble(hitId)
+              if (officeState.selectedAgentId === hitId) {
+                officeState.selectedAgentId = null
+                officeState.cameraFollowId = null
+              } else {
+                officeState.selectedAgentId = hitId
+                officeState.cameraFollowId = hitId
+              }
+              onClick(hitId)
+            } else if (officeState.selectedAgentId !== null) {
+              const selectedCh = officeState.characters.get(officeState.selectedAgentId)
+              if (selectedCh && !selectedCh.isSubagent) {
+                const tile = screenToTile(tapX, tapY)
+                if (tile) {
+                  const seatId = officeState.getSeatAtTile(tile.col, tile.row)
+                  if (seatId) {
+                    const seat = officeState.seats.get(seatId)
+                    if (seat) {
+                      if (selectedCh.seatId === seatId) {
+                        officeState.sendToSeat(officeState.selectedAgentId)
+                        officeState.selectedAgentId = null
+                        officeState.cameraFollowId = null
+                      } else if (!seat.assigned) {
+                        officeState.reassignSeat(officeState.selectedAgentId, seatId)
+                        officeState.selectedAgentId = null
+                        officeState.cameraFollowId = null
+                        const seats: Record<number, { palette: number; seatId: string | null }> = {}
+                        for (const ch of officeState.characters.values()) {
+                          if (ch.isSubagent) continue
+                          seats[ch.id] = { palette: ch.palette, seatId: ch.seatId }
+                        }
+                        vscode.postMessage({ type: 'saveAgentSeats', seats })
+                      }
+                    }
+                  } else {
+                    officeState.selectedAgentId = null
+                    officeState.cameraFollowId = null
+                  }
+                }
+              } else {
+                officeState.selectedAgentId = null
+                officeState.cameraFollowId = null
+              }
+            }
+          }
+        }
+      }
+    }
+
+    touchModeRef.current = 'none'
+    touchStartPosRef.current = null
+  }, [isEditMode, officeState, editorState, zoom, onZoomChange, onClick, screenToWorld, screenToTile, cancelLongPress, onEditorTileAction, onEditorSelectionChange, onDragMove, onContextMenuProp])
 
   return (
     <div
@@ -832,7 +1148,8 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchMove={handleTouchMove}
-        style={{ display: 'block' }}
+        onTouchCancel={handleTouchEnd}
+        style={{ display: 'block', touchAction: 'none' }}
       />
     </div>
   )

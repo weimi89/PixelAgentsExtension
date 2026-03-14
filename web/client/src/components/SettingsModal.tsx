@@ -147,6 +147,7 @@ export function SettingsModal({ isOpen, onClose, isDebugMode, onToggleDebugMode,
         role="dialog"
         aria-modal="true"
         aria-label={t.settings}
+        className="pixel-modal-dialog"
         style={{
           position: 'fixed',
           top: '50%',

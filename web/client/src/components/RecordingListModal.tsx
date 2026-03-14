@@ -107,7 +107,7 @@ export const RecordingListModal = memo(function RecordingListModal({ isOpen, onC
 
   return (
     <div style={overlayStyle} onClick={onClose}>
-      <div style={panelStyle} onClick={e => e.stopPropagation()}>
+      <div className="pixel-modal-dialog" style={panelStyle} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '24px', color: 'var(--pixel-text)' }}>{t.recordingList}</span>
           <button style={btnStyle} onClick={onClose}>X</button>

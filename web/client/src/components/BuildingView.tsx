@@ -215,7 +215,7 @@ export const BuildingView = memo(function BuildingView({
   }
 
   return (
-    <div style={panelStyle}>
+    <div className="pixel-building-panel" style={panelStyle}>
       {/* 標題列 */}
       <div style={headerStyle}>
         <span style={{ fontSize: '22px', color: 'var(--pixel-text)', fontWeight: 'bold' }}>

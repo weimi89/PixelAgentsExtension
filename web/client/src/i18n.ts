@@ -251,6 +251,10 @@ export const t = {
   terminalExited: '終端已結束',
   terminalNoTmux: '此代理沒有 tmux 工作',
 
+  // 行動裝置
+  touchEditHint: '單指繪製/放置 | 雙指縮放平移',
+  doubleTapZoom: '雙擊縮放',
+
   // 行為編輯器
   behavior: '行為',
   behaviorEditor: '行為參數編輯',

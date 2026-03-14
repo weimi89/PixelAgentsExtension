@@ -100,3 +100,201 @@ button:focus-visible, input:focus-visible {
 button {
   transition: background 0.1s, color 0.1s, border-color 0.1s;
 }
+
+/* ── Safe Area Insets ──────────────────────────────────────── */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* ── 觸控裝置通用 ────────────────────────────────────────── */
+@media (pointer: coarse) {
+  canvas {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+  }
+
+  /* 觸控裝置停用 hover 殘留效果 */
+  .pixel-bottom-toolbar button:hover,
+  .pixel-zoom-controls button:hover {
+    background: var(--pixel-btn-bg);
+  }
+}
+
+/* ── Mobile (<768px) ──────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* 底部工具列：可捲動 + safe area + 緊湊按鈕 */
+  .pixel-bottom-toolbar {
+    left: calc(var(--safe-left) + 6px) !important;
+    right: calc(var(--safe-right) + 6px) !important;
+    bottom: calc(var(--safe-bottom) + 6px) !important;
+    max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 12px) !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 3px 4px !important;
+    gap: 2px !important;
+  }
+  .pixel-bottom-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .pixel-bottom-toolbar button {
+    min-height: 40px;
+    min-width: 36px;
+    flex-shrink: 0;
+    font-size: 18px !important;
+    padding: 4px 7px !important;
+    white-space: nowrap;
+  }
+  /* 捲動漸層提示 */
+  .pixel-bottom-toolbar::after {
+    content: '';
+    position: sticky;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    min-width: 20px;
+    flex-shrink: 0;
+    background: linear-gradient(to right, transparent, var(--pixel-bg));
+    pointer-events: none;
+  }
+
+  /* 縮放控制項：增大觸控區域 + safe area */
+  .pixel-zoom-controls {
+    top: calc(var(--safe-top) + 8px) !important;
+    left: calc(var(--safe-left) + 8px) !important;
+  }
+  .pixel-zoom-controls button {
+    width: 48px !important;
+    height: 48px !important;
+  }
+
+  /* 代理詳情面板：全寬抽屜 */
+  .pixel-detail-panel {
+    width: 100vw !important;
+    max-width: 100vw !important;
+  }
+
+  /* 編輯器工具列：全寬底部 */
+  .pixel-editor-toolbar {
+    left: calc(var(--safe-left) + 4px) !important;
+    right: calc(var(--safe-right) + 4px) !important;
+    max-width: calc(100vw - var(--safe-left) - var(--safe-right) - 8px) !important;
+  }
+  .pixel-editor-toolbar button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .pixel-editor-toolbar input[type="range"] {
+    height: 24px;
+  }
+
+  /* 模態框全寬 */
+  .pixel-modal-overlay {
+    align-items: flex-end !important;
+  }
+  .pixel-modal-dialog {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
+    max-height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 32px) !important;
+    margin-bottom: calc(var(--safe-bottom) + 8px) !important;
+  }
+  .pixel-modal-dialog button {
+    min-height: 44px;
+  }
+
+  /* EditActionBar */
+  .pixel-edit-action-bar {
+    top: calc(var(--safe-top) + 8px) !important;
+  }
+  .pixel-edit-action-bar button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* 大樓面板：全寬抽屜 */
+  .pixel-building-panel {
+    width: 100vw !important;
+    max-width: 100vw !important;
+  }
+
+  /* 聊天面板：行動版縮小並上移 */
+  .pixel-chat-panel {
+    width: 200px !important;
+    bottom: 56px !important;
+    right: 6px !important;
+  }
+
+  /* 儀表板：行動版全面適配 */
+  .pixel-dashboard {
+    overflow: auto !important;
+    padding: 12px 10px calc(var(--safe-bottom) + 60px) 10px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .pixel-dashboard-header h1 {
+    font-size: 24px !important;
+  }
+  .pixel-dashboard-header span {
+    font-size: 18px !important;
+  }
+  .pixel-dashboard-stats {
+    flex-direction: column !important;
+  }
+  .pixel-dashboard-stats > div {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+  .pixel-dashboard-body {
+    flex-direction: column !important;
+    overflow: visible !important;
+    flex: none !important;
+  }
+  .pixel-dashboard-body > div {
+    flex: none !important;
+  }
+  .pixel-dashboard-body table {
+    font-size: 14px !important;
+  }
+
+  /* 斷線指示器 */
+  .pixel-disconnected {
+    top: calc(var(--safe-top) + 8px) !important;
+    right: calc(var(--safe-right) + 8px) !important;
+    font-size: 16px !important;
+  }
+
+  /* 旋轉提示 */
+  .pixel-rotate-hint {
+    top: calc(var(--safe-top) + 8px) !important;
+  }
+}
+
+/* ── Tablet (768px - 1024px) ──────────────────────────────── */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .pixel-detail-panel {
+    width: 320px !important;
+  }
+
+  .pixel-zoom-controls button {
+    width: 44px !important;
+    height: 44px !important;
+  }
+
+  .pixel-bottom-toolbar {
+    gap: 3px !important;
+  }
+  .pixel-bottom-toolbar button {
+    white-space: nowrap;
+    font-size: 20px !important;
+    padding: 5px 8px !important;
+    min-height: 42px;
+  }
+
+  .pixel-editor-toolbar button {
+    min-height: 42px;
+  }
+}
