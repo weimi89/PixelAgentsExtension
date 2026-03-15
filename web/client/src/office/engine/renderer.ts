@@ -963,7 +963,8 @@ export function renderMinimap(
   mmH = Math.round(mmH)
 
   const marginLeft = MINIMAP_MARGIN * dpr
-  const marginTop = MINIMAP_MARGIN * dpr
+  // 小地圖在左上角，向下偏移避開縮放按鈕（約 90px CSS）
+  const marginTop = (cssWidth < 768 ? MINIMAP_MARGIN : 90) * dpr
   const mmX = marginLeft
   const mmY = marginTop
 
