@@ -3,8 +3,9 @@ import { SettingsModal } from './SettingsModal.js'
 import { FloorSelector } from './FloorSelector.js'
 import { useDeviceType } from '../hooks/useDeviceType.js'
 import { t } from '../i18n.js'
-import type { FloorConfig } from '../types/messages.js'
+import type { FloorConfig, ConnectedNodeInfo } from '../types/messages.js'
 import type { RecordingState } from '../office/engine/recorder.js'
+import type { Theme } from '../hooks/useTheme.js'
 
 // ── 像素風格 SVG 圖示（18x18）─────────────────────────────
 const S = 18
@@ -94,6 +95,31 @@ function IconEdit() {
   )
 }
 
+/** 團隊 — 兩個人 */
+function IconTeams() {
+  return (
+    <svg width={S} height={S} viewBox="0 0 18 18" fill="none" style={iconStyle}>
+      <circle cx="6" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <circle cx="12" cy="6" r="2.5" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <path d="M2 15C2 12 4 10 6 10C8 10 10 12 10 15" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <path d="M8 15C8 12 10 10 12 10C14 10 16 12 16 15" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    </svg>
+  )
+}
+
+/** 分享 — 分享圖示 */
+function IconShare() {
+  return (
+    <svg width={S} height={S} viewBox="0 0 18 18" fill="none" style={iconStyle}>
+      <circle cx="13" cy="4" r="2" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <circle cx="5" cy="9" r="2" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <circle cx="13" cy="14" r="2" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <line x1="7" y1="8" x2="11" y2="5" stroke="currentColor" strokeWidth="1.5" />
+      <line x1="7" y1="10" x2="11" y2="13" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
 /** 設定 — 齒輪 */
 function IconSettings() {
   return (
@@ -124,12 +150,22 @@ interface BottomToolbarProps {
   uiScale: number
   onUiScaleChange: (scale: number) => void
   lanPeers: Array<{ name: string; host: string; port: number; agentCount: number }>
+  nodeHealthNodes: ConnectedNodeInfo[]
   isSettingsOpen: boolean
   onToggleSettings: () => void
   isBehaviorEditorOpen: boolean
   onToggleBehaviorEditor: () => void
   isTemplatesOpen: boolean
   onToggleTemplates: () => void
+  // 主題
+  theme: Theme
+  onThemeToggle: () => void
+  // 團隊面板
+  isTeamPanelOpen: boolean
+  onToggleTeamPanel: () => void
+  // 佈局分享
+  isLayoutShareOpen: boolean
+  onToggleLayoutShare: () => void
   // 錄製/回放
   recorderState: RecordingState
   recordingDuration: number
@@ -193,12 +229,19 @@ export const BottomToolbar = memo(function BottomToolbar({
   uiScale,
   onUiScaleChange,
   lanPeers,
+  nodeHealthNodes,
   isSettingsOpen,
   onToggleSettings,
   isBehaviorEditorOpen,
   onToggleBehaviorEditor,
   isTemplatesOpen,
   onToggleTemplates,
+  theme,
+  onThemeToggle,
+  isTeamPanelOpen,
+  onToggleTeamPanel,
+  isLayoutShareOpen,
+  onToggleLayoutShare,
   recorderState,
   recordingDuration,
   playbackProgress,
@@ -241,6 +284,8 @@ export const BottomToolbar = memo(function BottomToolbar({
       {tbBtn('sessions', t.sessions, t.browseSessions, <IconSessions />, onOpenSessionPicker, false)}
       {tbBtn('behavior', t.behavior, t.behaviorEditor, <IconBehavior />, onToggleBehaviorEditor, isBehaviorEditorOpen)}
       {tbBtn('templates', t.layoutTemplates, t.layoutTemplates, <IconTemplates />, onToggleTemplates, isTemplatesOpen)}
+      {tbBtn('teams', t.teams, t.allTeams, <IconTeams />, onToggleTeamPanel, isTeamPanelOpen)}
+      {tbBtn('share', t.shareLayout, t.shareLayout, <IconShare />, onToggleLayoutShare, isLayoutShareOpen)}
       {tbBtn('edit', t.layout, t.editOfficeLayout, <IconEdit />, onToggleEditMode, isEditMode)}
       <div style={{ position: 'relative' }}>
         {tbBtn('settings', t.settings, t.settings, <IconSettings />, onToggleSettings, isSettingsOpen)}
@@ -256,6 +301,9 @@ export const BottomToolbar = memo(function BottomToolbar({
           uiScale={uiScale}
           onUiScaleChange={onUiScaleChange}
           lanPeers={lanPeers}
+          nodeHealthNodes={nodeHealthNodes}
+          theme={theme}
+          onThemeToggle={onThemeToggle}
         />
       </div>
       {/* 錄製/回放控制 */}

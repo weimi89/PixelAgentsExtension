@@ -102,3 +102,14 @@ export type ServerMessage =
   | { type: 'lanPeers'; peers: Array<{ name: string; host: string; port: number; agentCount: number }> }
   | { type: 'behaviorSettingsLoaded'; settings: Record<string, number> }
   | { type: 'agentGrowth'; id: number; xp: number; level: number; achievements: string[]; newAchievements: string[] }
+  | { type: 'nodeHealth'; nodes: ConnectedNodeInfo[] }
+
+/** 已連線 Agent Node 的摘要資訊 */
+export interface ConnectedNodeInfo {
+  username: string
+  socketId: string
+  latencyMs: number
+  activeSessions: number
+  connectedAt: number
+  lastHeartbeat: number
+}

@@ -260,11 +260,28 @@ export const EditorToolbar = memo(function EditorToolbar({
           {t.erase}
         </button>
         <button
-          style={isFurnitureActive ? activeBtnStyle : btnStyle}
+          style={{ ...(isFurnitureActive ? activeBtnStyle : btnStyle), position: 'relative' }}
           onClick={() => onToolChange(EditTool.FURNITURE_PLACE)}
           title={t.placeFurniture}
         >
           {t.furniture}
+          {loadedAssets && loadedAssets.catalog.length > 0 && (
+            <span style={{
+              position: 'absolute',
+              top: -4,
+              right: -4,
+              fontSize: '12px',
+              padding: '0 3px',
+              background: 'var(--pixel-accent)',
+              color: '#fff',
+              border: '1px solid var(--pixel-border)',
+              lineHeight: '16px',
+              minWidth: 16,
+              textAlign: 'center',
+            }}>
+              {loadedAssets.catalog.length}
+            </span>
+          )}
         </button>
       </div>
 

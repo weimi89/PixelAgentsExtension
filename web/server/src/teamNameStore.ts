@@ -3,12 +3,13 @@ import * as path from 'path';
 import * as os from 'os';
 import { LAYOUT_FILE_DIR, TEAM_NAMES_FILE_NAME } from './constants.js';
 import { atomicWriteJson } from './atomicWrite.js';
+import { db } from './db/database.js';
 
 function getFilePath(): string {
 	return path.join(os.homedir(), LAYOUT_FILE_DIR, TEAM_NAMES_FILE_NAME);
 }
 
-function readTeamNames(): Record<string, string> {
+function readTeamNamesFromJson(): Record<string, string> {
 	try {
 		const filePath = getFilePath();
 		if (!fs.existsSync(filePath)) return {};
@@ -28,12 +29,19 @@ function writeTeamNames(map: Record<string, string>): void {
 
 export function getTeamName(projectDir: string): string | null {
 	const key = path.basename(projectDir);
-	return readTeamNames()[key] ?? null;
+	if (db) {
+		return db.getTeamName(key) ?? null;
+	}
+	return readTeamNamesFromJson()[key] ?? null;
 }
 
 export function setTeamName(projectDir: string, teamName: string | null): void {
 	const key = path.basename(projectDir);
-	const map = readTeamNames();
+	if (db) {
+		db.setTeamName(key, teamName);
+		return;
+	}
+	const map = readTeamNamesFromJson();
 	if (teamName) {
 		map[key] = teamName;
 	} else {

@@ -1,5 +1,6 @@
-// 集中管理的 UI 字串 — 繁體中文本地化
-export const t = {
+// 集中管理的 UI 字串 — 多語言支援
+
+const zh_TW = {
   // 底部工具列
   layout: '佈局',
   editOfficeLayout: '編輯辦公室佈局',
@@ -310,4 +311,506 @@ export const t = {
   stopPlayback: '停止',
   recordingName: '名稱',
   importRecordingFailed: '匯入錄製失敗',
-} as const
+
+  // 認證 / 密碼
+  changePassword: '變更密碼',
+  currentPassword: '當前密碼',
+  newPassword: '新密碼',
+  confirmPassword: '確認密碼',
+  passwordChanged: '密碼已變更',
+  passwordMismatch: '密碼不一致',
+  passwordRequirements: '至少 8 字元，含大小寫字母及數字',
+  forceChangePassword: '請先變更預設密碼',
+
+  // 角色 / 使用者管理
+  roleAdmin: '管理員',
+  roleViewer: '觀察者',
+  userManagement: '使用者管理',
+  noPermission: '權限不足',
+  deleteUser: '刪除使用者',
+  changeRole: '變更角色',
+
+  // 使用者管理
+  userManagementPanel: '使用者管理',
+  userListTitle: '使用者列表',
+  userUsername: '使用者名稱',
+  userRole: '角色',
+  userCreatedAt: '建立時間',
+  userActions: '操作',
+  userDeleteConfirm: (name: string) => `確定要刪除使用者「${name}」嗎？`,
+  userRoleUpdated: '角色已更新',
+  userDeleted: '使用者已刪除',
+  userLoadFailed: '無法載入使用者列表',
+  noUsers: '沒有使用者',
+
+  // 遠端節點健康
+  remoteNodes: '遠端節點',
+  nodeLatency: '延遲',
+  nodeConnectedTime: '連線時間',
+  nodeActiveSessions: '活躍代理',
+  noRemoteNodes: '目前沒有連線的遠端節點',
+  latencyGood: '良好',
+  latencyFair: '普通',
+  latencyPoor: '不佳',
+  nodeHealth: '節點狀態',
+
+  // Phase 6 新增 — 成就系統 UI
+  achievements: '成就',
+  achievementUnlocked: '解鎖成就',
+  allAchievements: '所有成就',
+  locked: '未解鎖',
+
+  // Phase 6 新增 — 團隊系統
+  teams: '團隊',
+  allTeams: '所有團隊',
+  teamMembers: '成員',
+  filterByTeam: '依團隊篩選',
+
+  // Phase 6 新增 — 佈局分享
+  shareLayout: '分享佈局',
+  copyToClipboard: '複製到剪貼簿',
+  pasteFromClipboard: '從剪貼簿貼上',
+  copied: '已複製',
+
+  // Phase 6 新增 — 多語言 & 主題
+  language: '語言',
+  theme: '主題',
+  darkTheme: '深色',
+  lightTheme: '淺色',
+
+  // Phase 6 新增 — 家具計數
+  furnitureCount: (n: number) => `${n} 個素材`,
+}
+
+/** 語言字串型別（結構型別，非 literal） */
+type LocaleStrings = typeof zh_TW
+
+const en_US: LocaleStrings = {
+  // Bottom toolbar
+  layout: 'Layout',
+  editOfficeLayout: 'Edit office layout',
+  settings: 'Settings',
+
+  // Zoom controls
+  zoomIn: 'Zoom In (Ctrl+Scroll)',
+  zoomOut: 'Zoom Out (Ctrl+Scroll)',
+  zoomLevel: (n: number) => `${n}x`,
+
+  // Settings panel
+  exportLayout: 'Export Layout',
+  importLayout: 'Import Layout',
+  soundNotifications: 'Sound Notifications',
+  soundWaiting: 'Waiting Sound',
+  soundPermission: 'Permission Sound',
+  soundTurnComplete: 'Turn Complete Sound',
+  debugView: 'Debug View',
+
+  // Agent
+  agent: (id: number) => `Agent #${id}`,
+  closeAgent: 'Close Agent',
+
+  // Git branch
+  gitBranch: 'Branch',
+
+  // Context menu
+  contextGoToSeat: 'Go to Seat',
+  contextFollowCamera: 'Follow Camera',
+  contextMoveFloor: 'Move to Floor',
+  contextFocusParent: 'Focus Parent',
+
+  // Status
+  needsApproval: 'Needs Approval',
+  idle: 'Idle',
+  mightBeWaiting: 'May be waiting for input',
+
+  // Editor toolbar
+  floor: 'Floor',
+  paintFloorTiles: 'Paint floor tiles',
+  wall: 'Wall',
+  paintWalls: 'Paint walls (click to toggle)',
+  erase: 'Erase',
+  eraseTilesToVoid: 'Erase tiles to void',
+  furniture: 'Furniture',
+  placeFurniture: 'Place furniture',
+  color: 'Color',
+  adjustFloorColor: 'Adjust floor color',
+  adjustWallColor: 'Adjust wall color',
+  adjustFurnitureColor: 'Adjust selected furniture color',
+  pick: 'Pick',
+  pickFloorPattern: 'Pick color from existing tile',
+  pickFurnitureType: 'Pick type from placed furniture',
+  clearColor: 'Clear',
+  removeColor: 'Remove color (restore original)',
+  colorize: 'Colorize',
+  floorPattern: (index: number) => `Floor ${index}`,
+
+  // Edit action bar
+  undo: 'Undo',
+  undoShortcut: 'Undo (Ctrl+Z)',
+  redo: 'Redo',
+  redoShortcut: 'Redo (Ctrl+Y)',
+  save: 'Save',
+  saveLayout: 'Save Layout',
+  reset: 'Reset',
+  resetToLastSaved: 'Reset to last saved layout',
+  resetConfirm: 'Confirm reset?',
+  yes: 'Yes',
+  no: 'No',
+
+  // Error boundary
+  errorOccurred: 'An error occurred',
+  retry: 'Retry',
+
+  // Loading
+  loading: 'Loading...',
+
+  // Hint
+  pressRToRotate: 'Press <b>R</b> to rotate',
+
+  // Model
+  unknownModel: 'Unknown model',
+
+  // Detached (tmux)
+  detached: 'Detached',
+
+  // Session picker
+  sessions: 'Sessions',
+  browseSessions: 'Browse past sessions',
+  noSessions: 'No sessions found',
+  resumeSession: 'Resume',
+  activeSession: 'Active',
+  loadingSessions: 'Loading...',
+  sessionProject: 'Project',
+  searchSessions: 'Search sessions...',
+  noMatchingSessions: 'No matching sessions',
+
+  // Project exclude
+  hideProject: 'Hide',
+  showProject: 'Show',
+  excludedProjects: 'Hidden Projects',
+  noExcludedProjects: 'No hidden projects',
+  projectFolders: 'Project Folders',
+  projectFoldersCount: (n: number) => `Project Folders (${n})`,
+
+  // Connection status
+  disconnected: 'Disconnected, reconnecting...',
+
+  // Subtask
+  subtask: 'Subtask',
+
+  // Time format
+  timeAgoSeconds: (n: number) => `${n}s ago`,
+  timeAgoMinutes: (n: number) => `${n}m ago`,
+  timeAgoHours: (n: number) => `${n}h ago`,
+  timeAgoDays: (n: number) => `${n}d ago`,
+  timeAgoMonths: (n: number) => `${n}mo ago`,
+
+  // Layout templates
+  layoutTemplates: 'Spaces',
+  loadTemplate: 'Apply',
+  templateClassicOffice: 'Classic Office',
+  templateOpenPlan: 'Open Plan',
+  templateCoworking: 'Co-working',
+  templateMinimal: 'Minimal',
+  templateLShapeStudio: 'L-Shape Studio',
+  templateConferenceCenter: 'Conference Center',
+  templateMazeHall: 'Maze Hall',
+  templateTwinWing: 'Twin Wing',
+  templateRingOffice: 'Ring Office',
+  templateCubicleFarm: 'Cubicle Farm',
+  templateTerraced: 'Terraced',
+  templateGrandPlaza: 'Grand Plaza',
+  templateConfirmLoad: 'Confirm apply? Layout will be overwritten.',
+  templateTargetFloor: 'Apply to:',
+
+  // Layout import validation
+  invalidLayoutFile: 'Invalid layout file',
+  parseLayoutFailed: 'Failed to parse layout file',
+
+  // Floors
+  lobby: 'Lobby',
+  addFloor: 'Add Floor',
+  removeFloor: 'Remove Floor',
+  renameFloor: 'Rename',
+
+  // Remote agents
+  remoteAgent: 'Remote',
+  owner: 'Owner',
+
+  // Building panel
+  building: 'Building',
+  buildingPanel: 'Building Panel',
+  floorAgentCount: (n: number) => `${n} agents`,
+  newFloorName: 'New Floor',
+  deleteFloorConfirm: 'Delete this floor?',
+  cannotDeleteLastFloor: 'Cannot delete the last floor',
+  // Day-night cycle
+  dayNightCycle: 'Day/Night Cycle',
+  useRealTime: 'Use real time',
+  timeOverride: 'Time Override',
+
+  // Chat
+  chatPlaceholder: 'Type a message...',
+  chatSend: 'Send',
+  chat: 'Chat',
+  chatNickname: 'Nickname',
+
+  // Meeting
+  meeting: 'In Meeting',
+
+  // Cross-floor
+  elevator: 'Elevator',
+  movingFloor: 'Moving floors',
+
+  // Dashboard
+  dashboard: 'Dashboard',
+  officeView: 'Office',
+  openDashboard: 'Open dashboard in new tab',
+  totalAgents: 'Total Agents',
+  activeAgents: 'Active Agents',
+  totalToolCalls: 'Tool Calls',
+  toolDistribution: 'Tool Distribution',
+  floorOverview: 'Floor Overview',
+  agentList: 'Agent List',
+  project: 'Project',
+  status: 'Status',
+  tool: 'Tool',
+  model: 'Model',
+  active: 'Active',
+  inactive: 'Idle',
+  remote: 'Remote',
+  noAgentsYet: 'No agents yet',
+  noToolData: 'No tool data',
+
+  // Status history
+  statusHistory: 'Status History',
+
+  // Agent detail panel
+  agentDetail: 'Agent Details',
+  agentDetailInfo: 'Basic Info',
+  agentDetailTools: 'Tool Activity',
+  agentDetailHistory: 'Status History',
+  agentDetailClose: 'Close Panel',
+  agentDetailTimeline: 'Timeline',
+  agentDetailTranscript: 'Transcript',
+  workStartTime: 'Work Start',
+  workDuration: 'Work Duration',
+  noTranscript: 'No transcript',
+  noHistory: 'No history',
+
+  // UI scale
+  uiScale: 'UI Scale',
+
+  // Pixel text
+  pixelText: 'Pixel Text',
+  pixelTextPlaceholder: 'Enter text...',
+  pixelTextLabel: 'Text',
+  // Team
+  team: 'Team',
+  setTeam: 'Set Team',
+  noTeam: 'No Team',
+  teamName: 'Team Name',
+
+  // CLI type
+  cliType: 'CLI Type',
+  cliClaude: 'Claude',
+  cliCodex: 'Codex',
+  cliGemini: 'Gemini',
+
+  // LAN discovery
+  lanDiscovery: 'LAN Discovery',
+  lanDiscoveryEnabled: 'Enable LAN Discovery',
+  lanPeerName: 'Display Name',
+  lanPeers: 'LAN Peers',
+  lanNoPeers: 'No other instances found',
+  lanAgentCount: 'agents',
+
+  // Terminal
+  terminal: 'Terminal',
+  openTerminal: 'Open Terminal',
+  terminalCloseTab: 'Close this tab',
+  terminalClosePanel: 'Close terminal panel',
+  terminalSelectTab: 'Select a tab',
+  terminalError: 'Terminal Error',
+  terminalConnectionError: 'Terminal connection failed',
+  terminalDisconnected: 'Terminal disconnected',
+  terminalExited: 'Terminal exited',
+  terminalNoTmux: 'No tmux session for this agent',
+
+  // Mobile
+  touchEditHint: 'One finger draw/place | Two fingers zoom/pan',
+  doubleTapZoom: 'Double tap to zoom',
+
+  // Behavior editor
+  behavior: 'Behavior',
+  behaviorEditor: 'Behavior Parameters',
+  behaviorWeights: 'Wander Behavior Weights',
+  behaviorTiming: 'Timing Parameters',
+  behaviorWeightIdleLook: 'Idle Look',
+  behaviorWeightRandom: 'Random Wander',
+  behaviorWeightFurniture: 'Furniture Interact',
+  behaviorWeightChat: 'Chat',
+  behaviorWeightWall: 'Wall Interact',
+  behaviorWeightMeeting: 'Meeting',
+  behaviorWeightReturnSeat: 'Return to Seat',
+  behaviorWanderPause: 'Wander Pause',
+  behaviorSeatRest: 'Seat Rest',
+  behaviorSleepTrigger: 'Sleep Trigger',
+  behaviorStretchTrigger: 'Stretch Trigger',
+  behaviorChatDuration: 'Chat Duration',
+  behaviorFurnitureCooldown: 'Furniture Cooldown',
+  behaviorWeightTotal: (n: number) => `Total Weight: ${n}`,
+  behaviorResetDefaults: 'Reset Defaults',
+  behaviorSeconds: (n: number) => `${n}s`,
+  behaviorMinMax: (label: string) => `${label} (min/max)`,
+
+  // Growth system
+  growthLevel: (n: number) => `Lv.${n}`,
+  growthXp: (n: number) => `${n} XP`,
+  growthSection: 'Growth',
+  achievementNames: {
+    first_tool: 'First Call',
+    ten_tools: '10 Calls',
+    hundred_tools: '100 Calls',
+    thousand_tools: '1000 Calls',
+    level_5: 'Level 5',
+    level_10: 'Level 10',
+    level_25: 'Level 25',
+    level_50: 'Level 50',
+    five_sessions: 'Veteran',
+    bash_user: 'CLI Master',
+  } as Record<string, string>,
+
+  // Recording/Playback
+  recording: 'Record',
+  stopRecording: 'Stop Recording',
+  recordingList: 'Recording List',
+  noRecordings: 'No recordings',
+  playRecording: 'Play',
+  deleteRecording: 'Delete',
+  exportRecording: 'Export',
+  importRecording: 'Import',
+  recordingDuration: (n: number) => `${n.toFixed(1)}s`,
+  recordingFrames: (n: number) => `${n} frames`,
+  playback: 'Playing',
+  stopPlayback: 'Stop',
+  recordingName: 'Name',
+  importRecordingFailed: 'Failed to import recording',
+
+  // Auth / Password
+  changePassword: 'Change Password',
+  currentPassword: 'Current Password',
+  newPassword: 'New Password',
+  confirmPassword: 'Confirm Password',
+  passwordChanged: 'Password Changed',
+  passwordMismatch: 'Passwords do not match',
+  passwordRequirements: 'At least 8 chars, with upper/lowercase and numbers',
+  forceChangePassword: 'Please change the default password first',
+
+  // Role / User management
+  roleAdmin: 'Admin',
+  roleViewer: 'Viewer',
+  userManagement: 'User Management',
+  noPermission: 'Insufficient permissions',
+  deleteUser: 'Delete User',
+  changeRole: 'Change Role',
+
+  // User management
+  userManagementPanel: 'User Management',
+  userListTitle: 'User List',
+  userUsername: 'Username',
+  userRole: 'Role',
+  userCreatedAt: 'Created',
+  userActions: 'Actions',
+  userDeleteConfirm: (name: string) => `Delete user "${name}"?`,
+  userRoleUpdated: 'Role updated',
+  userDeleted: 'User deleted',
+  userLoadFailed: 'Failed to load user list',
+  noUsers: 'No users',
+
+  // Remote node health
+  remoteNodes: 'Remote Nodes',
+  nodeLatency: 'Latency',
+  nodeConnectedTime: 'Connected',
+  nodeActiveSessions: 'Active Agents',
+  noRemoteNodes: 'No connected remote nodes',
+  latencyGood: 'Good',
+  latencyFair: 'Fair',
+  latencyPoor: 'Poor',
+  nodeHealth: 'Node Health',
+
+  // Phase 6 — Achievement System UI
+  achievements: 'Achievements',
+  achievementUnlocked: 'Achievement Unlocked',
+  allAchievements: 'All Achievements',
+  locked: 'Locked',
+
+  // Phase 6 — Team System
+  teams: 'Teams',
+  allTeams: 'All Teams',
+  teamMembers: 'Members',
+  filterByTeam: 'Filter by Team',
+
+  // Phase 6 — Layout Sharing
+  shareLayout: 'Share Layout',
+  copyToClipboard: 'Copy to Clipboard',
+  pasteFromClipboard: 'Paste from Clipboard',
+  copied: 'Copied',
+
+  // Phase 6 — Language & Theme
+  language: 'Language',
+  theme: 'Theme',
+  darkTheme: 'Dark',
+  lightTheme: 'Light',
+
+  // Phase 6 — Furniture count
+  furnitureCount: (n: number) => `${n} assets`,
+}
+
+// ── Locale 管理 ──────────────────────────────────────────────────
+
+type Locale = 'zh-TW' | 'en-US'
+
+const LOCALE_STORAGE_KEY = 'pixel-agents-locale'
+
+const localeMap: Record<Locale, LocaleStrings> = {
+  'zh-TW': zh_TW,
+  'en-US': en_US,
+}
+
+const LOCALE_LABELS: Record<Locale, string> = {
+  'zh-TW': '繁體中文',
+  'en-US': 'English',
+}
+
+const AVAILABLE_LOCALES: Locale[] = ['zh-TW', 'en-US']
+
+let currentLocale: Locale = (() => {
+  try {
+    const stored = localStorage.getItem(LOCALE_STORAGE_KEY)
+    if (stored && stored in localeMap) return stored as Locale
+  } catch { /* ignore */ }
+  return 'zh-TW'
+})()
+
+/** 動態代理物件：依照當前語言回傳對應字串 */
+export const t: LocaleStrings = new Proxy(zh_TW, {
+  get(_target, prop: string) {
+    const strings = localeMap[currentLocale]
+    return (strings as Record<string, unknown>)[prop]
+  },
+}) as LocaleStrings
+
+export function getLocale(): Locale {
+  return currentLocale
+}
+
+export function setLocale(locale: Locale): void {
+  currentLocale = locale
+  try {
+    localStorage.setItem(LOCALE_STORAGE_KEY, locale)
+  } catch { /* ignore */ }
+}
+
+export { AVAILABLE_LOCALES, LOCALE_LABELS }
+export type { Locale }

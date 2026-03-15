@@ -27,6 +27,8 @@ export class Scanner {
 	private scanTimer: ReturnType<typeof setInterval> | null = null;
 	/** sessionId → 最後更新時間 */
 	private lastActivity = new Map<string, number>();
+	/** 伺服器同步的排除專案清單（目錄 basename） */
+	private excludedProjects: Set<string> = new Set();
 
 	constructor(tracker: AgentTracker, options: ScannerOptions = {}) {
 		this.tracker = tracker;
@@ -36,6 +38,12 @@ export class Scanner {
 			staleTimeoutMs: options.staleTimeoutMs ?? DEFAULT_STALE_TIMEOUT_MS,
 			ignoredPatterns: options.ignoredPatterns ?? DEFAULT_IGNORED_PATTERNS,
 		};
+	}
+
+	/** 設定排除專案清單（由伺服器同步推送） */
+	setExcludedProjects(excluded: string[]): void {
+		this.excludedProjects = new Set(excluded);
+		console.log(`[Agent Node] Excluded projects updated: ${excluded.length} project(s)`);
 	}
 
 	/** 啟動掃描 */
@@ -62,6 +70,7 @@ export class Scanner {
 			projectDirs = entries
 				.filter(e => e.isDirectory())
 				.filter(e => !this.options.ignoredPatterns.some(p => e.name.includes(p)))
+				.filter(e => !this.excludedProjects.has(e.name))
 				.map(e => path.join(projectsRoot, e.name));
 		} catch {
 			return;
@@ -69,7 +78,6 @@ export class Scanner {
 
 		const now = Date.now();
 		const trackedSessions = this.tracker.getTrackedSessions();
-		const activeSessions = new Set<string>();
 
 		for (const dir of projectDirs) {
 			let files: fs.Dirent[];
@@ -89,7 +97,6 @@ export class Scanner {
 					const age = now - stat.mtimeMs;
 
 					if (age < this.options.activeMaxAgeMs) {
-						activeSessions.add(sessionId);
 						this.lastActivity.set(sessionId, now);
 
 						if (!trackedSessions.has(sessionId)) {

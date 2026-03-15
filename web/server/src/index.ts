@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { fileURLToPath } from 'url';
+import * as https from 'https';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -41,22 +42,42 @@ import {
 	GIT_ROOT_MAX_DEPTH,
 } from './constants.js';
 import { isDemoEnabled, startDemoMode, stopDemoMode } from './demoMode.js';
+import { startAutoBackup, stopAutoBackup, runBackupNow } from './backup.js';
 import { sendTmuxKeys } from './tmuxManager.js';
 import { cancelPermissionTimer } from './timerManager.js';
 import { initAuthRoutes } from './auth/routes.js';
-import { setupAgentNodeNamespace } from './agentNodeHandler.js';
-import { loadDashboardStats, getDashboardStats, flushDashboardStats } from './dashboardStats.js';
+import { setupAgentNodeNamespace, getConnectedNodes, syncExcludedProjectsToNodes, startRemoteTerminalRelay, sendRemoteTerminalInput, sendRemoteTerminalResize, detachRemoteTerminal, forwardResumeSessionToNode } from './agentNodeHandler.js';
+import { cluster } from './cluster.js';
+import { loadDashboardStats, getDashboardStats, flushDashboardStats, startStatsFlushTimer, stopStatsFlushTimer } from './dashboardStats.js';
 import { startLanDiscovery, stopLanDiscovery, getLanPeers, isLanDiscoveryRunning } from './lanDiscovery.js';
-import { LAN_DISCOVERY_HEARTBEAT_MS } from './constants.js';
+import { LAN_DISCOVERY_HEARTBEAT_MS, NODE_HEALTH_BROADCAST_INTERVAL_MS } from './constants.js';
 import { readBehaviorSettings, writeBehaviorSettings } from './behaviorSettingsStore.js';
 import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
 import { createTerminalPty, trackPty, cleanupAllTerminals } from './terminalManager.js';
-import { TERMINAL_WS_PATH } from './constants.js';
+import { TERMINAL_WS_PATH, TERMINAL_DEFAULT_COLS, TERMINAL_DEFAULT_ROWS } from './constants.js';
 import { registerAdapter } from './cliAdapters/index.js';
 import { claudeAdapter } from './cliAdapters/claudeAdapter.js';
 import { codexAdapter } from './cliAdapters/codexAdapter.js';
 import { geminiAdapter } from './cliAdapters/geminiAdapter.js';
+import { startStressTest, stopStressTest } from './stressTest.js';
+import { createRateLimit } from './rateLimit.js';
+import { sanitizeSessionId, sanitizeProjectDir } from './pathSecurity.js';
+import { logAudit } from './auditLog.js';
+import { logger } from './logger.js';
+import { config } from './config.js';
+import { initDatabase } from './db/database.js';
+import { migrateFromJson } from './db/jsonMigration.js';
+import { initRedis, redis } from './db/redis.js';
+import {
+	RATE_LIMIT_API_WINDOW_MS,
+	RATE_LIMIT_API_MAX_REQUESTS,
+	RATE_LIMIT_LOGIN_WINDOW_MS,
+	RATE_LIMIT_LOGIN_MAX_REQUESTS,
+	RATE_LIMIT_REGISTER_WINDOW_MS,
+	RATE_LIMIT_REGISTER_MAX_REQUESTS,
+	ALLOWED_ORIGINS_ENV_KEY,
+} from './constants.js';
 
 // 註冊 CLI 適配器
 registerAdapter(claudeAdapter);
@@ -68,7 +89,7 @@ registerAdapter(geminiAdapter);
 const agents = new Map<number, AgentState>();
 const nextAgentIdRef = { current: 1 };
 const activeAgentIdRef = { current: null as number | null };
-const projectScanTimerRef = { current: null as ReturnType<typeof setInterval> | null };
+const projectScanTimerRef = { current: null as ReturnType<typeof setTimeout> | null };
 const tmuxRecoveredRef = { current: false };
 
 // 每個代理的計時器
@@ -86,6 +107,9 @@ const socketNicknames = new Map<string, string>();
 /** socketId → 上次聊天訊息時間戳（速率限制） */
 const socketChatLastTs = new Map<string, number>();
 let nextNicknameCounter = 1;
+
+// ── 節點健康廣播狀態 ────────────────────────────────────────
+let nodeHealthBroadcastTimer: ReturnType<typeof setInterval> | null = null;
 
 // ── LAN 自動發現狀態 ────────────────────────────────────────
 let lanPeerName = os.hostname();
@@ -151,16 +175,26 @@ function findGitRoot(startDir: string): string | null {
 
 const cwd = process.argv[2] || findGitRoot(process.cwd()) || process.cwd();
 const ownProjectDir = getProjectDirPath(cwd);
-console.log(`[Pixel Agents] Working directory: ${cwd}`);
-console.log(`[Pixel Agents] Own project dir: ${ownProjectDir}`);
+logger.info('Working directory', { cwd });
+logger.info('Own project dir', { ownProjectDir });
 
 // ── AgentContext — 集中管理的共享狀態 ──────────────────────
+
+// ── SQLite 資料庫初始化 ──────────────────────────────────────
+const dbPath = path.join(config.dataDir, 'pixel-agents.db');
+const database = initDatabase(dbPath);
+logger.info('Database initialized', { dbPath });
+// 自動匯入既有 JSON 資料（僅首次）
+const migrated = migrateFromJson(database, config.dataDir);
+if (migrated) {
+	logger.info('JSON data migrated to SQLite');
+}
 
 // ── 樓層 / 建築物 ──────────────────────────────────────────
 const socketFloors = new Map<string, FloorId>();
 const building = loadBuildingConfig();
 const floorAgentCounts = new Map<string, number>();
-console.log(`[Pixel Agents] Building: ${building.floors.length} floor(s), default=${building.defaultFloorId}`);
+logger.info('Building loaded', { floors: building.floors.length, defaultFloor: building.defaultFloorId });
 
 /** 暫時的 sender 佔位 — 在 socket 連線時更新 */
 const ctx: AgentContext = {
@@ -228,13 +262,14 @@ function findAssetsRoot(): string {
 // ── 主程式 ─────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-	const port = parseInt(process.env['PORT'] || String(DEFAULT_PORT), 10);
+	const port = config.port;
 
 	// 載入素材
 	const assetsRoot = findAssetsRoot();
-	console.log(`[Pixel Agents] Assets root: ${assetsRoot}`);
+	logger.info('Assets root', { assetsRoot });
 
 	loadDashboardStats();
+	startStatsFlushTimer();
 	defaultLayout = await loadDefaultLayout(assetsRoot);
 	layoutTemplates = await loadLayoutTemplates(assetsRoot);
 	cachedCharSprites = await loadCharacterSprites(assetsRoot);
@@ -244,7 +279,41 @@ async function main(): Promise<void> {
 
 	// 設定 Express + Socket.IO
 	const app = express();
-	const httpServer = createServer(app);
+
+	// ── 選擇性 HTTPS 支援 ─────────────────────────────────────
+	const useHttps = config.https;
+	let httpServer: ReturnType<typeof createServer>;
+	if (useHttps) {
+		// 自簽憑證（僅供本地開發使用）
+		const selfSignedCertPath = path.join(userDir, 'self-signed-cert.pem');
+		const selfSignedKeyPath = path.join(userDir, 'self-signed-key.pem');
+		let cert: string;
+		let key: string;
+		try {
+			if (fs.existsSync(selfSignedCertPath) && fs.existsSync(selfSignedKeyPath)) {
+				cert = fs.readFileSync(selfSignedCertPath, 'utf-8');
+				key = fs.readFileSync(selfSignedKeyPath, 'utf-8');
+			} else {
+				// 使用 openssl 生成自簽憑證
+				const { execSync } = await import('child_process');
+				execSync(
+					`openssl req -x509 -newkey rsa:2048 -keyout "${selfSignedKeyPath}" -out "${selfSignedCertPath}" -days 365 -nodes -subj "/CN=localhost"`,
+					{ stdio: 'pipe' },
+				);
+				cert = fs.readFileSync(selfSignedCertPath, 'utf-8');
+				key = fs.readFileSync(selfSignedKeyPath, 'utf-8');
+				logger.info('Generated self-signed certificate for HTTPS');
+			}
+			httpServer = https.createServer({ cert, key }, app) as unknown as ReturnType<typeof createServer>;
+			logger.info('HTTPS mode enabled (self-signed certificate)');
+		} catch (err) {
+			logger.warn('Failed to create HTTPS server, falling back to HTTP', { error: String(err) });
+			httpServer = createServer(app);
+		}
+	} else {
+		httpServer = createServer(app);
+	}
+
 	const io = new Server(httpServer, {
 		cors: {
 			origin: [
@@ -253,14 +322,129 @@ async function main(): Promise<void> {
 			],
 		},
 		maxHttpBufferSize: SOCKET_IO_MAX_BUFFER_SIZE,
+		perMessageDeflate: {
+			threshold: 256, // 僅壓縮 > 256 bytes 的訊息
+		},
+	});
+
+	// ── Redis 初始化 + Socket.IO Redis Adapter ─────────────────
+	if (config.redisUrl) {
+		await initRedis(config.redisUrl);
+	}
+	if (redis.isConnected()) {
+		const pubClient = redis.getClient();
+		const subClient = redis.getSubClient();
+		if (pubClient && subClient) {
+			const { createAdapter } = await import('@socket.io/redis-adapter');
+			io.adapter(createAdapter(pubClient, subClient));
+			logger.info('Socket.IO Redis adapter enabled');
+		}
+	}
+
+	// ── Socket.IO CSRF 來源驗證 ────────────────────────────────
+	const allowedOrigins = [
+		`http://localhost:${port}`,
+		`http://127.0.0.1:${port}`,
+		`https://localhost:${port}`,
+		`https://127.0.0.1:${port}`,
+		'http://localhost:5173', // Vite 開發伺服器
+	];
+	// 從環境變數擴充允許的來源（逗號分隔）
+	const envOrigins = process.env[ALLOWED_ORIGINS_ENV_KEY];
+	if (envOrigins) {
+		for (const origin of envOrigins.split(',')) {
+			const trimmed = origin.trim();
+			if (trimmed) allowedOrigins.push(trimmed);
+		}
+	}
+	io.engine.use((req: import('http').IncomingMessage, res: import('http').ServerResponse, next: (err?: Error) => void) => {
+		const origin = req.headers.origin;
+		// 無 origin（同源請求或非瀏覽器客戶端）→ 允許
+		if (!origin) {
+			next();
+			return;
+		}
+		if (allowedOrigins.includes(origin)) {
+			next();
+			return;
+		}
+		console.warn(`[Pixel Agents] Socket.IO CSRF blocked origin: ${origin}`);
+		res.writeHead(403);
+		res.end();
 	});
 
 	// JSON body 解析（API 路由需要）
 	app.use(express.json());
 
-	// 認證路由
+	// ── 速率限制 ────────────────────────────────────────────────
+	const apiRateLimit = createRateLimit({
+		windowMs: RATE_LIMIT_API_WINDOW_MS,
+		maxRequests: RATE_LIMIT_API_MAX_REQUESTS,
+	});
+	const loginRateLimit = createRateLimit({
+		windowMs: RATE_LIMIT_LOGIN_WINDOW_MS,
+		maxRequests: RATE_LIMIT_LOGIN_MAX_REQUESTS,
+	});
+	const registerRateLimit = createRateLimit({
+		windowMs: RATE_LIMIT_REGISTER_WINDOW_MS,
+		maxRequests: RATE_LIMIT_REGISTER_MAX_REQUESTS,
+	});
+
+	// 認證路由（套用速率限制）
 	const authRouter = await initAuthRoutes();
-	app.use('/api/auth', authRouter);
+	app.use('/api/auth/login', loginRateLimit);
+	app.use('/api/auth/register', registerRateLimit);
+	app.use('/api/auth', apiRateLimit, authRouter);
+
+	// 健康檢查端點
+	app.get('/health', (_req, res) => {
+		res.json({ status: 'ok', uptime: Math.round(process.uptime()) });
+	});
+
+	// ── 健康檢查端點（Docker HEALTHCHECK / 負載均衡器）────────
+	app.get('/health', (_req, res) => {
+		res.json({ status: 'ok', uptime: Math.round(process.uptime()) });
+	});
+
+	// 指標端點（壓力測試與監控用）
+	app.get('/api/metrics', (_req, res) => {
+		const mem = process.memoryUsage();
+		res.json({
+			agents: ctx.agents.size,
+			remoteAgents: ctx.remoteAgentMap.size,
+			trackedFiles: ctx.trackedJsonlFiles.size,
+			heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+			rssMB: Math.round(mem.rss / 1024 / 1024),
+			uptimeSeconds: Math.round(process.uptime()),
+		});
+	});
+
+	// 詳細狀態端點（含版本、樓層、記憶體等）
+	app.get('/api/status', (_req, res) => {
+		const mem = process.memoryUsage();
+		res.json({
+			status: 'ok',
+			version: '1.0.0',
+			agents: { total: ctx.agents.size, remote: ctx.remoteAgentMap.size },
+			memory: {
+				heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+				rssMB: Math.round(mem.rss / 1024 / 1024),
+			},
+			uptime: Math.round(process.uptime()),
+			floors: ctx.building.floors.length,
+			trackedFiles: ctx.trackedJsonlFiles.size,
+		});
+	});
+
+	// 叢集狀態端點（Task 7.2: 伺服器聯邦）
+	app.get('/api/cluster/status', (_req, res) => {
+		res.json({
+			serverId: config.serverId,
+			peers: cluster.listPeerServers(),
+			totalAgents: ctx.agents.size,
+			clusterEnabled: config.clusterEnabled,
+		});
+	});
 
 	// 提供客戶端靜態檔案（正式環境）
 	const clientDistPath = path.join(__dirname, '..', '..', 'client', 'dist');
@@ -270,6 +454,17 @@ async function main(): Promise<void> {
 
 	// Agent Node namespace（遠端代理連線）
 	setupAgentNodeNamespace(io, ctx);
+
+	// ── 叢集管理器（Task 7.1: 多伺服器叢集）──────────────────
+	await cluster.start(ctx);
+
+	// 定期廣播節點健康狀態至所有瀏覽器客戶端
+	nodeHealthBroadcastTimer = setInterval(() => {
+		const nodes = getConnectedNodes();
+		if (nodes.length > 0) {
+			io.emit('message', { type: 'nodeHealth', nodes });
+		}
+	}, NODE_HEALTH_BROADCAST_INTERVAL_MS);
 
 	// 全域廣播 sender — 用於需要送達所有客戶端的訊息（如 projectNameUpdated）
 	ctx.sender = {
@@ -365,8 +560,9 @@ async function main(): Promise<void> {
 		handleTerminalConnection(ws);
 	});
 
+	const protocol = useHttps ? 'https' : 'http';
 	httpServer.listen(port, () => {
-		console.log(`\n  Pixel Agents Web running at http://localhost:${port}\n`);
+		logger.info(`Pixel Agents Web running at ${protocol}://localhost:${port}`);
 	});
 
 	// LAN 自動發現（opt-in）
@@ -379,6 +575,14 @@ async function main(): Promise<void> {
 	if (typeof settings.lanPeerName === 'string' && settings.lanPeerName) {
 		lanPeerName = settings.lanPeerName;
 	}
+
+	// 壓力測試模式（opt-in：--stress N 或 STRESS_TEST=N）
+	if (config.stressTest > 0) {
+		startStressTest(config.stressTest, ctx);
+	}
+
+	// 自動備份（每 6 小時）
+	startAutoBackup();
 
 	setupGracefulShutdown(httpServer, io);
 }
@@ -418,11 +622,16 @@ function setupGracefulShutdown(
 	function shutdown(signal: string): void {
 		if (shuttingDown) return;
 		shuttingDown = true;
-		console.log(`\n[Pixel Agents] ${signal} received, shutting down...`);
+		logger.info(`${signal} received, shutting down...`);
 
-		// 全域計時器
+		// Phase 1: 停止接受新連線
+		httpServer.close(() => {
+			logger.debug('HTTP server closed, no longer accepting connections');
+		});
+
+		// Phase 2: 清除全域計時器
 		if (projectScanTimerRef.current) {
-			clearInterval(projectScanTimerRef.current);
+			clearTimeout(projectScanTimerRef.current);
 			projectScanTimerRef.current = null;
 		}
 		if (tmuxHealthTimer) {
@@ -430,11 +639,23 @@ function setupGracefulShutdown(
 			tmuxHealthTimer = null;
 		}
 		if (isDemoEnabled()) stopDemoMode();
+		stopStressTest();
+		stopAutoBackup();
+		stopStatsFlushTimer();
 		stopLanDiscovery();
 		stopLanPeerBroadcast();
+		if (nodeHealthBroadcastTimer) {
+			clearInterval(nodeHealthBroadcastTimer);
+			nodeHealthBroadcastTimer = null;
+		}
 		cleanupAllTerminals();
 
-		// 代理資源（不終止 tmux — 保留供下次恢復）
+		// Phase 2.5: 停止叢集管理器
+		cluster.stop().catch((err) => {
+			logger.error('Failed to stop cluster manager', { error: err });
+		});
+
+		// Phase 3: 清除代理資源（不終止 tmux — 保留供下次恢復）
 		for (const [agentId, agent] of agents) {
 			const jp = jsonlPollTimers.get(agentId);
 			if (jp) clearInterval(jp);
@@ -455,17 +676,35 @@ function setupGracefulShutdown(
 		waitingTimers.clear();
 		permissionTimers.clear();
 
+		// Phase 4: 刷新所有待寫入資料
 		persistAgents();
 		flushDashboardStats();
+		logger.info('Pending data flushed');
 
-		io.close(() => {
-			httpServer.close(() => {
-				console.log('[Pixel Agents] Shutdown complete.');
-				process.exit(0);
+		// Phase 4.5: 關閉資料庫連線
+		try {
+			database.close();
+			logger.info('Database closed');
+		} catch (err) {
+			logger.error('Failed to close database', { error: err });
+		}
+
+		// Phase 4.6: 斷開 Redis 連線
+		if (redis.isConnected()) {
+			redis.disconnect().catch((err) => {
+				logger.error('Failed to disconnect Redis', { error: err });
 			});
+		}
+
+		// Phase 5: 等待 Socket.IO 連線排空後退出
+		io.close(() => {
+			logger.info('Shutdown complete');
+			process.exit(0);
 		});
+
+		// 強制退出保護
 		setTimeout(() => {
-			console.warn('[Pixel Agents] Forced shutdown after timeout');
+			logger.warn('Forced shutdown after timeout');
 			process.exit(1);
 		}, GRACEFUL_SHUTDOWN_TIMEOUT_MS).unref();
 	}
@@ -473,10 +712,12 @@ function setupGracefulShutdown(
 	process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-/** 處理終端 WebSocket 連線 — 每個連線對應一個 pty 實例 */
+/** 處理終端 WebSocket 連線 — 每個連線對應一個 pty 實例（本地）或終端中繼（遠端） */
 function handleTerminalConnection(ws: WebSocket): void {
 	let pty: import('node-pty').IPty | null = null;
 	let attachedAgentId: number | null = null;
+	/** 遠端代理的 sessionId（中繼模式下使用） */
+	let remoteSessionId: string | null = null;
 
 	ws.on('message', (raw) => {
 		// 所有客戶端→伺服器訊息皆為 JSON 文字
@@ -489,11 +730,16 @@ function handleTerminalConnection(ws: WebSocket): void {
 
 		switch (msg.type) {
 			case 'attach': {
+				// 清除先前的連線
 				if (pty) {
-					// 已有 pty，先清除
 					pty.kill();
 					pty = null;
 				}
+				if (remoteSessionId) {
+					detachRemoteTerminal(remoteSessionId);
+					remoteSessionId = null;
+				}
+
 				const agentId = msg.agentId;
 				if (agentId === undefined) {
 					ws.send(JSON.stringify({ type: 'error', message: 'Missing agentId' }));
@@ -504,10 +750,27 @@ function handleTerminalConnection(ws: WebSocket): void {
 					ws.send(JSON.stringify({ type: 'error', message: 'Agent not found' }));
 					return;
 				}
+
+				// 遠端代理 — 透過 Agent Node 中繼
 				if (agent.isRemote) {
-					ws.send(JSON.stringify({ type: 'error', message: 'Remote agents do not support terminal' }));
-					return;
+					if (!agent.remoteSessionId) {
+						ws.send(JSON.stringify({ type: 'error', message: 'Remote agent has no session ID' }));
+						return;
+					}
+					const cols = msg.cols || TERMINAL_DEFAULT_COLS;
+					const rows = msg.rows || TERMINAL_DEFAULT_ROWS;
+					const ok = startRemoteTerminalRelay(agent.remoteSessionId, ws, cols, rows);
+					if (!ok) {
+						ws.send(JSON.stringify({ type: 'error', message: 'Agent Node not connected' }));
+						return;
+					}
+					remoteSessionId = agent.remoteSessionId;
+					attachedAgentId = agentId;
+					console.log(`[Pixel Agents] Terminal relay started for remote agent ${agentId} (session: ${remoteSessionId})`);
+					break;
 				}
+
+				// 本地代理 — 直接建立 pty
 				if (!agent.tmuxSessionName) {
 					ws.send(JSON.stringify({ type: 'error', message: 'Agent has no tmux session' }));
 					return;
@@ -539,18 +802,28 @@ function handleTerminalConnection(ws: WebSocket): void {
 				break;
 			}
 			case 'input': {
-				if (pty && typeof msg.data === 'string') {
+				if (typeof msg.data !== 'string') break;
+				if (remoteSessionId) {
+					sendRemoteTerminalInput(remoteSessionId, msg.data);
+				} else if (pty) {
 					pty.write(msg.data);
 				}
 				break;
 			}
 			case 'resize': {
-				if (pty && typeof msg.cols === 'number' && typeof msg.rows === 'number') {
+				if (typeof msg.cols !== 'number' || typeof msg.rows !== 'number') break;
+				if (remoteSessionId) {
+					sendRemoteTerminalResize(remoteSessionId, msg.cols, msg.rows);
+				} else if (pty) {
 					pty.resize(Math.max(1, msg.cols), Math.max(1, msg.rows));
 				}
 				break;
 			}
 			case 'detach': {
+				if (remoteSessionId) {
+					detachRemoteTerminal(remoteSessionId);
+					remoteSessionId = null;
+				}
 				if (pty) {
 					pty.kill();
 					pty = null;
@@ -563,6 +836,10 @@ function handleTerminalConnection(ws: WebSocket): void {
 	});
 
 	ws.on('close', () => {
+		if (remoteSessionId) {
+			detachRemoteTerminal(remoteSessionId);
+			remoteSessionId = null;
+		}
 		if (pty) {
 			pty.kill();
 			pty = null;
@@ -675,6 +952,7 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 				console.log(`[Pixel Agents] Ignoring closeAgent for remote agent ${msg.id}`);
 				break;
 			}
+			logAudit('agent_close', undefined, `agentId=${msg.id}`);
 			closeAgent(msg.id, ctx);
 			break;
 		}
@@ -689,6 +967,7 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 		case 'saveLayout': {
 			const floorId = (socket && socketFloors.get(socket.id)) || DEFAULT_FLOOR_ID;
 			writeFloorLayout(floorId, msg.layout);
+			logAudit('layout_save', undefined, `floorId=${floorId}`);
 			break;
 		}
 		case 'setSoundEnabled': {
@@ -721,8 +1000,36 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			break;
 		}
 		case 'resumeSession': {
-			// 遠端代理不適用 resumeSession
-			resumeSession(msg.sessionId, msg.projectDir, cwd, ctx);
+			// 路徑安全驗證
+			const sessionCheck = sanitizeSessionId(msg.sessionId);
+			if (!sessionCheck.valid) {
+				console.warn(`[Pixel Agents] resumeSession rejected: ${sessionCheck.error}`);
+				break;
+			}
+			const projCheck = sanitizeProjectDir(msg.projectDir);
+			if (!projCheck.valid) {
+				console.warn(`[Pixel Agents] resumeSession projectDir rejected: ${projCheck.error}`);
+				break;
+			}
+			// Task 7.3: 檢查是否為遠端代理的會話 — 若是則轉發至 Agent Node
+			let forwardedToNode = false;
+			for (const [remoteSessionId, agentId] of ctx.remoteAgentMap) {
+				const agent = ctx.agents.get(agentId);
+				if (agent && agent.remoteSessionId === sessionCheck.normalized) {
+					forwardedToNode = forwardResumeSessionToNode(
+						remoteSessionId,
+						sessionCheck.normalized!,
+						projCheck.normalized!,
+					);
+					if (forwardedToNode) {
+						console.log(`[Pixel Agents] resumeSession forwarded to Agent Node: ${sessionCheck.normalized}`);
+					}
+					break;
+				}
+			}
+			if (!forwardedToNode) {
+				resumeSession(sessionCheck.normalized!, projCheck.normalized!, cwd, ctx);
+			}
 			break;
 		}
 		case 'requestExportLayout': {
@@ -763,7 +1070,9 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 				removeAgent(agentId, ctx);
 				ctx.floorSender(removedFloor).postMessage({ type: 'agentClosed', id: agentId });
 			}
-			ctx.sender?.postMessage({ type: 'excludedProjectsUpdated', excluded: readExcludedProjects() });
+			const excludedAfterAdd = readExcludedProjects();
+			ctx.sender?.postMessage({ type: 'excludedProjectsUpdated', excluded: excludedAfterAdd });
+			syncExcludedProjectsToNodes(excludedAfterAdd);
 			break;
 		}
 		case 'includeProject': {
@@ -771,7 +1080,9 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			// 立即重新掃描一次
 			const projectDirs = getAllProjectDirs();
 			ensureProjectScan(projectDirs, projectScanTimerRef, ctx);
-			ctx.sender?.postMessage({ type: 'excludedProjectsUpdated', excluded: readExcludedProjects() });
+			const excludedAfterRemove = readExcludedProjects();
+			ctx.sender?.postMessage({ type: 'excludedProjectsUpdated', excluded: excludedAfterRemove });
+			syncExcludedProjectsToNodes(excludedAfterRemove);
 			break;
 		}
 		case 'listProjectDirs': {
@@ -1051,6 +1362,11 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			sender.postMessage({ type: 'behaviorSettingsLoaded', settings: readBehaviorSettings() });
 			break;
 		}
+		case 'requestNodeHealth': {
+			const nodes = getConnectedNodes();
+			sender.postMessage({ type: 'nodeHealth', nodes });
+			break;
+		}
 		case 'requestDashboardData': {
 			const dashStats = getDashboardStats();
 			const floorCounts = new Map<string, { total: number; active: number }>();
@@ -1104,7 +1420,23 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 	}
 }
 
-main().catch((err) => {
-	console.error('[Pixel Agents] Failed to start:', err);
-	process.exit(1);
-});
+// --backup-now：執行一次備份後退出（不啟動伺服器）
+if (process.argv.includes('--backup-now')) {
+	runBackupNow().then((dir) => {
+		if (dir) {
+			console.log(`[Pixel Agents] Backup completed: ${dir}`);
+			process.exit(0);
+		} else {
+			console.error('[Pixel Agents] Backup failed or skipped');
+			process.exit(1);
+		}
+	}).catch((err) => {
+		console.error('[Pixel Agents] Backup error:', err);
+		process.exit(1);
+	});
+} else {
+	main().catch((err) => {
+		console.error('[Pixel Agents] Failed to start:', err);
+		process.exit(1);
+	});
+}

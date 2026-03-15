@@ -10,7 +10,8 @@
   size-adjust: 140%;
 }
 
-:root {
+:root,
+[data-theme="dark"] {
   --pixel-bg: #1e1e2e;
   --pixel-border: #4a4a6a;
   --pixel-border-light: #6a6a8a;
@@ -59,6 +60,65 @@
 
   /* UI scaling factor (set via JS) */
   --pixel-ui-scale: 1;
+
+  /* Achievement toast */
+  --pixel-gold: #ffd700;
+  --pixel-gold-dim: rgba(255, 215, 0, 0.3);
+}
+
+[data-theme="light"] {
+  --pixel-bg: #f0f0f4;
+  --pixel-border: #c0c0c8;
+  --pixel-border-light: #d0d0d8;
+  --pixel-accent: #4a6fa5;
+  --pixel-green: #3a9868;
+  --pixel-shadow: 2px 2px 0px rgba(0, 0, 0, 0.15);
+
+  /* Button base */
+  --pixel-text: rgba(0, 0, 0, 0.75);
+  --pixel-text-dim: rgba(0, 0, 0, 0.6);
+  --pixel-btn-bg: rgba(0, 0, 0, 0.06);
+  --pixel-btn-hover-bg: rgba(0, 0, 0, 0.1);
+  --pixel-btn-disabled-opacity: 0.35;
+
+  /* Active/selected button state */
+  --pixel-active-bg: rgba(74, 111, 165, 0.2);
+
+  /* Close button */
+  --pixel-close-text: rgba(0, 0, 0, 0.4);
+  --pixel-close-hover: #c33;
+
+  /* Hints & confirmations */
+  --pixel-hint-bg: #5a9ad5;
+  --pixel-reset-text: #933;
+  --pixel-danger-bg: #c44;
+
+  /* Vignette */
+  --pixel-vignette: radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.15) 100%);
+
+  /* Status dot colors */
+  --pixel-status-permission: #b89500;
+  --pixel-status-active: #2a7ae5;
+  --pixel-status-detached: #888;
+
+  /* Tool type colors */
+  --pixel-tool-read: #3a7ad5;
+  --pixel-tool-write: #d44;
+  --pixel-tool-execute: #3a9868;
+  --pixel-tool-task: #9060c0;
+  --pixel-tool-wait: #b89500;
+
+  /* ToolOverlay z-index layers */
+  --pixel-overlay-z: 100;
+  --pixel-overlay-selected-z: 110;
+  --pixel-controls-z: 50;
+
+  /* UI scaling factor (set via JS) */
+  --pixel-ui-scale: 1;
+
+  /* Achievement toast */
+  --pixel-gold: #c8a000;
+  --pixel-gold-dim: rgba(200, 160, 0, 0.2);
 }
 
 /* 套用 UI 縮放至所有覆蓋層元素（非 canvas） */

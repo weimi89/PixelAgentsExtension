@@ -3,6 +3,7 @@ import type { ToolActivity } from '../office/types.js'
 import { extractToolName } from '../office/toolUtils.js'
 import { TOOL_TYPE_COLORS, LEVEL_BADGE_COLORS, CLI_TYPE_BADGE_COLORS } from '../constants.js'
 import { AgentTimeline } from './AgentTimeline.js'
+import { AchievementPanel } from './AchievementPanel.js'
 import { formatModelName } from '../utils.js'
 import { vscode } from '../socketApi.js'
 import { t } from '../i18n.js'
@@ -212,6 +213,7 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
 }: AgentDetailPanelProps) {
   const [visible, setVisible] = useState(false)
   const [closeHovered, setCloseHovered] = useState(false)
+  const [isAchievementPanelOpen, setIsAchievementPanelOpen] = useState(false)
 
   // 滑入動畫
   useEffect(() => {
@@ -448,9 +450,9 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
               transition: 'width 0.3s ease',
             }} />
           </div>
-          {/* 成就列表 */}
+          {/* 成就列表 + 查看所有按鈕 */}
           {growth.achievements.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6, alignItems: 'center' }}>
               {growth.achievements.map((a) => (
                 <span key={a} style={{
                   fontSize: '14px',
@@ -462,10 +464,30 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
                   {t.achievementNames[a] || a}
                 </span>
               ))}
+              <button
+                onClick={() => setIsAchievementPanelOpen(true)}
+                style={{
+                  fontSize: '14px',
+                  padding: '1px 6px',
+                  background: 'var(--pixel-btn-bg)',
+                  color: 'var(--pixel-accent)',
+                  border: '1px solid var(--pixel-accent)',
+                  borderRadius: 0,
+                  cursor: 'pointer',
+                }}
+              >
+                {t.allAchievements}
+              </button>
             </div>
           )}
         </div>
       )}
+
+      <AchievementPanel
+        isOpen={isAchievementPanelOpen}
+        onClose={() => setIsAchievementPanelOpen(false)}
+        unlockedAchievements={growth?.achievements || []}
+      />
 
       {/* ---- 工具活動（固定標題 + 獨立捲動） ---- */}
       <div style={sectionHeaderStyle}>

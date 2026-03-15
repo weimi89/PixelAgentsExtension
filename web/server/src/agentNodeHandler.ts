@@ -6,17 +6,58 @@ import { resolveFloorForProject } from './floorAssignment.js';
 import { removeAgent } from './agentManager.js';
 import { cancelPermissionTimer } from './timerManager.js';
 import { appendStatusHistory } from './transcriptParser.js';
-import { MAX_TRANSCRIPT_LOG, TOOL_DONE_DELAY_MS } from './constants.js';
+import { readExcludedProjects } from './projectNameStore.js';
+import {
+	MAX_TRANSCRIPT_LOG,
+	TOOL_DONE_DELAY_MS,
+	AGENT_NODE_HEARTBEAT_TIMEOUT_MS,
+} from './constants.js';
 
 interface SocketData {
 	user: { userId: string; username: string };
 	/** 此 socket 擁有的遠端代理 sessionId 集合 */
 	ownedSessions: Set<string>;
+	/** 最後一次收到心跳的時間戳 */
+	lastHeartbeat: number;
+	/** 最近一次心跳延遲（毫秒） */
+	latencyMs: number;
+	/** 連線建立時間戳 */
+	connectedAt: number;
 }
+
+/** 已連線節點的摘要資訊 */
+export interface ConnectedNodeInfo {
+	username: string;
+	socketId: string;
+	latencyMs: number;
+	activeSessions: number;
+	connectedAt: number;
+	lastHeartbeat: number;
+}
+
+/** 瀏覽器終端 WebSocket 的最小介面（避免直接依賴 ws 模組） */
+export interface TerminalWebSocket {
+	readyState: number;
+	send(data: string | Buffer): void;
+	close(): void;
+}
+
+/** 遠端終端中繼映射：remoteSessionId → 瀏覽器端 WebSocket 連線 */
+const remoteTerminalSockets = new Map<string, TerminalWebSocket>();
+
+/** 遠端終端映射（反向）：remoteSessionId → Agent Node socket id（用於清理） */
+const remoteTerminalNodeSockets = new Map<string, string>();
+
+/** 心跳超時檢查計時器（供關閉清理用） */
+let heartbeatCheckInterval: ReturnType<typeof setInterval> | null = null;
+
+/** Agent Node namespace 參考（供外部廣播使用） */
+let agentNodeNamespace: ReturnType<Server['of']> | null = null;
 
 /** 設定 Agent Node 的 Socket.IO namespace（/agent-node） */
 export function setupAgentNodeNamespace(io: Server, ctx: AgentContext): void {
 	const ns = io.of('/agent-node');
+	agentNodeNamespace = ns;
 
 	// JWT 認證中介層
 	ns.use((socket, next) => {
@@ -27,9 +68,13 @@ export function setupAgentNodeNamespace(io: Server, ctx: AgentContext): void {
 		}
 		try {
 			const payload = verifyToken(token);
+			const now = Date.now();
 			(socket as Socket & { data: SocketData }).data = {
 				user: payload,
 				ownedSessions: new Set(),
+				lastHeartbeat: now,
+				latencyMs: 0,
+				connectedAt: now,
 			};
 			next();
 		} catch {
@@ -44,12 +89,18 @@ export function setupAgentNodeNamespace(io: Server, ctx: AgentContext): void {
 
 		socket.emit('message', { type: 'authenticated', userId: socket.data.user.userId } satisfies ServerNodeMessage);
 
+		// 連線後立即推送排除專案清單
+		const excluded = readExcludedProjects();
+		socket.emit('message', { type: 'excludedProjectsSync', excluded } satisfies ServerNodeMessage);
+
 		socket.on('event', (event: AgentNodeEvent) => {
 			handleAgentNodeEvent(event, socket, ctx);
 		});
 
 		socket.on('disconnect', () => {
 			console.log(`[Pixel Agents] Agent Node disconnected: ${username} (${socket.id})`);
+			// 清理此 socket 的所有終端中繼
+			cleanupTerminalRelaysForSocket(socket.id);
 			// 清除此 socket 擁有的所有遠端代理
 			for (const sessionId of socket.data.ownedSessions) {
 				const agentId = ctx.remoteAgentMap.get(sessionId);
@@ -65,6 +116,209 @@ export function setupAgentNodeNamespace(io: Server, ctx: AgentContext): void {
 			ctx.broadcastFloorSummaries();
 		});
 	});
+
+	// 啟動心跳超時檢查（每 TIMEOUT/3 檢查一次）
+	const checkIntervalMs = Math.floor(AGENT_NODE_HEARTBEAT_TIMEOUT_MS / 3);
+	heartbeatCheckInterval = setInterval(() => {
+		const now = Date.now();
+		for (const [, rawSocket] of ns.sockets) {
+			const socket = rawSocket as Socket & { data: SocketData };
+			if (now - socket.data.lastHeartbeat > AGENT_NODE_HEARTBEAT_TIMEOUT_MS) {
+				console.log(
+					`[Pixel Agents] Agent Node heartbeat timeout: ${socket.data.user.username} (${socket.id}), ` +
+					`last heartbeat ${Math.round((now - socket.data.lastHeartbeat) / 1000)}s ago`,
+				);
+				socket.disconnect(true);
+			}
+		}
+	}, checkIntervalMs);
+}
+
+/** 清理心跳檢查計時器（伺服器關閉時呼叫） */
+export function cleanupAgentNodeHeartbeat(): void {
+	if (heartbeatCheckInterval) {
+		clearInterval(heartbeatCheckInterval);
+		heartbeatCheckInterval = null;
+	}
+}
+
+/** 取得所有已連線的 Agent Node 摘要 */
+export function getConnectedNodes(): ConnectedNodeInfo[] {
+	if (!agentNodeNamespace) return [];
+	const nodes: ConnectedNodeInfo[] = [];
+	for (const [, rawSocket] of agentNodeNamespace.sockets) {
+		const socket = rawSocket as Socket & { data: SocketData };
+		nodes.push({
+			username: socket.data.user.username,
+			socketId: socket.id,
+			latencyMs: socket.data.latencyMs,
+			activeSessions: socket.data.ownedSessions.size,
+			connectedAt: socket.data.connectedAt,
+			lastHeartbeat: socket.data.lastHeartbeat,
+		});
+	}
+	return nodes;
+}
+
+/** 向所有 Agent Node 廣播排除專案清單 */
+export function broadcastExcludedProjectsToNodes(io: Server, excluded: string[]): void {
+	const ns = io.of('/agent-node');
+	ns.emit('message', { type: 'excludedProjectsSync', excluded } satisfies ServerNodeMessage);
+}
+
+/** 向所有 Agent Node 廣播排除專案清單（使用已儲存的 namespace） */
+export function syncExcludedProjectsToNodes(excluded: string[]): void {
+	if (!agentNodeNamespace) return;
+	agentNodeNamespace.emit('message', { type: 'excludedProjectsSync', excluded } satisfies ServerNodeMessage);
+}
+
+/**
+ * 為遠端代理啟動終端中繼。
+ * 找到擁有該 sessionId 的 Agent Node socket，傳送 terminalAttach，
+ * 並註冊瀏覽器 WebSocket 以接收回傳的終端資料。
+ * @returns true 如果成功啟動中繼，false 如果找不到 Agent Node
+ */
+export function startRemoteTerminalRelay(
+	remoteSessionId: string,
+	browserWs: TerminalWebSocket,
+	cols: number,
+	rows: number,
+): boolean {
+	if (!agentNodeNamespace) return false;
+
+	// 找到擁有此 sessionId 的 Agent Node socket
+	let targetSocket: (Socket & { data: SocketData }) | null = null;
+	for (const [, rawSocket] of agentNodeNamespace.sockets) {
+		const sock = rawSocket as Socket & { data: SocketData };
+		if (sock.data.ownedSessions.has(remoteSessionId)) {
+			targetSocket = sock;
+			break;
+		}
+	}
+
+	if (!targetSocket) return false;
+
+	// 註冊映射
+	remoteTerminalSockets.set(remoteSessionId, browserWs);
+	remoteTerminalNodeSockets.set(remoteSessionId, targetSocket.id);
+
+	// 發送 terminalAttach 至 Agent Node
+	targetSocket.emit('message', {
+		type: 'terminalAttach',
+		sessionId: remoteSessionId,
+		cols,
+		rows,
+	} satisfies ServerNodeMessage);
+
+	return true;
+}
+
+/** 轉發終端輸入至遠端 Agent Node */
+export function sendRemoteTerminalInput(remoteSessionId: string, data: string): void {
+	if (!agentNodeNamespace) return;
+	const nodeSocketId = remoteTerminalNodeSockets.get(remoteSessionId);
+	if (!nodeSocketId) return;
+
+	const rawSocket = agentNodeNamespace.sockets.get(nodeSocketId);
+	if (!rawSocket) return;
+
+	rawSocket.emit('message', {
+		type: 'terminalInput',
+		sessionId: remoteSessionId,
+		data,
+	} satisfies ServerNodeMessage);
+}
+
+/** 轉發終端 resize 至遠端 Agent Node */
+export function sendRemoteTerminalResize(remoteSessionId: string, cols: number, rows: number): void {
+	if (!agentNodeNamespace) return;
+	const nodeSocketId = remoteTerminalNodeSockets.get(remoteSessionId);
+	if (!nodeSocketId) return;
+
+	const rawSocket = agentNodeNamespace.sockets.get(nodeSocketId);
+	if (!rawSocket) return;
+
+	rawSocket.emit('message', {
+		type: 'terminalResize',
+		sessionId: remoteSessionId,
+		cols,
+		rows,
+	} satisfies ServerNodeMessage);
+}
+
+/** 中斷遠端終端中繼（由瀏覽器端觸發） */
+export function detachRemoteTerminal(remoteSessionId: string): void {
+	if (!agentNodeNamespace) return;
+	const nodeSocketId = remoteTerminalNodeSockets.get(remoteSessionId);
+
+	// 清理映射
+	remoteTerminalSockets.delete(remoteSessionId);
+	remoteTerminalNodeSockets.delete(remoteSessionId);
+
+	if (!nodeSocketId) return;
+	const rawSocket = agentNodeNamespace.sockets.get(nodeSocketId);
+	if (!rawSocket) return;
+
+	rawSocket.emit('message', {
+		type: 'terminalDetach',
+		sessionId: remoteSessionId,
+	} satisfies ServerNodeMessage);
+}
+
+/**
+ * 向擁有指定 sessionId 的 Agent Node 發送 resumeSession 指令。
+ * @returns true 如果找到對應的 Agent Node 並已發送，false 如果找不到
+ */
+export function forwardResumeSessionToNode(
+	remoteSessionId: string,
+	sessionId: string,
+	projectDir: string,
+): boolean {
+	if (!agentNodeNamespace) return false;
+
+	// 找到擁有此 remoteSessionId 的 Agent Node socket
+	for (const [, rawSocket] of agentNodeNamespace.sockets) {
+		const sock = rawSocket as Socket & { data: SocketData };
+		if (sock.data.ownedSessions.has(remoteSessionId)) {
+			sock.emit('message', {
+				type: 'resumeSession',
+				sessionId,
+				projectDir,
+			} satisfies ServerNodeMessage);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/** 檢查指定 remoteSessionId 是否已有活躍的終端中繼 */
+export function hasRemoteTerminalRelay(remoteSessionId: string): boolean {
+	return remoteTerminalSockets.has(remoteSessionId);
+}
+
+/** 清理指定 Agent Node socket 的所有終端中繼（斷線時呼叫） */
+function cleanupTerminalRelaysForSocket(socketId: string): void {
+	for (const [sessionId, nodeSocketId] of remoteTerminalNodeSockets) {
+		if (nodeSocketId === socketId) {
+			const browserWs = remoteTerminalSockets.get(sessionId);
+			if (browserWs && browserWs.readyState === 1) {
+				browserWs.send(JSON.stringify({ type: 'exit', code: 1 }));
+			}
+			remoteTerminalSockets.delete(sessionId);
+			remoteTerminalNodeSockets.delete(sessionId);
+		}
+	}
+}
+
+/** 清理指定 remoteSessionId 的終端中繼（代理停止時呼叫） */
+function cleanupTerminalRelayForSession(sessionId: string): void {
+	const browserWs = remoteTerminalSockets.get(sessionId);
+	if (browserWs && browserWs.readyState === 1) {
+		browserWs.send(JSON.stringify({ type: 'exit', code: 1 }));
+	}
+	remoteTerminalSockets.delete(sessionId);
+	remoteTerminalNodeSockets.delete(sessionId);
 }
 
 function handleAgentNodeEvent(
@@ -73,6 +327,73 @@ function handleAgentNodeEvent(
 	ctx: AgentContext,
 ): void {
 	const { username } = socket.data.user;
+
+	// sessionResumed 回報（Agent Node 恢復會話的結果）
+	if (event.type === 'sessionResumed') {
+		const agentId = ctx.remoteAgentMap.get(event.sessionId);
+		if (event.success) {
+			console.log(`[Pixel Agents] Remote session resumed: ${event.sessionId} (agent=${agentId})`);
+		} else {
+			console.warn(`[Pixel Agents] Remote session resume failed: ${event.sessionId} - ${event.error}`);
+		}
+		// 通知所有瀏覽器客戶端結果
+		ctx.sender?.postMessage({
+			type: 'remoteSessionResumed',
+			sessionId: event.sessionId,
+			success: event.success,
+			error: event.error,
+		});
+		return;
+	}
+
+	// 終端事件不需要 agentId 查詢，直接轉發至瀏覽器 WebSocket
+	if (event.type === 'terminalData') {
+		const browserWs = remoteTerminalSockets.get(event.sessionId);
+		if (browserWs && browserWs.readyState === 1) {
+			browserWs.send(Buffer.from(event.data, 'utf-8'));
+		}
+		return;
+	}
+	if (event.type === 'terminalReady') {
+		const browserWs = remoteTerminalSockets.get(event.sessionId);
+		if (browserWs && browserWs.readyState === 1) {
+			// 查找 agentId 以發送 attached 訊息
+			const agentId = ctx.remoteAgentMap.get(event.sessionId);
+			browserWs.send(JSON.stringify({ type: 'attached', agentId: agentId ?? -1 }));
+		}
+		return;
+	}
+	if (event.type === 'terminalExit') {
+		const browserWs = remoteTerminalSockets.get(event.sessionId);
+		if (browserWs && browserWs.readyState === 1) {
+			browserWs.send(JSON.stringify({ type: 'exit', code: event.code }));
+		}
+		remoteTerminalSockets.delete(event.sessionId);
+		remoteTerminalNodeSockets.delete(event.sessionId);
+		return;
+	}
+	if (event.type === 'terminalError') {
+		const browserWs = remoteTerminalSockets.get(event.sessionId);
+		if (browserWs && browserWs.readyState === 1) {
+			browserWs.send(JSON.stringify({ type: 'error', message: event.message }));
+		}
+		remoteTerminalSockets.delete(event.sessionId);
+		remoteTerminalNodeSockets.delete(event.sessionId);
+		return;
+	}
+
+	// 心跳不需要 sessionId 查詢，提前處理並返回
+	if (event.type === 'heartbeat') {
+		const now = Date.now();
+		socket.data.lastHeartbeat = now;
+		socket.data.latencyMs = now - event.timestamp;
+		socket.emit('message', {
+			type: 'heartbeatAck',
+			timestamp: event.timestamp,
+			serverTime: now,
+		} satisfies ServerNodeMessage);
+		return;
+	}
 
 	switch (event.type) {
 		case 'agentStarted': {
@@ -145,6 +466,9 @@ function handleAgentNodeEvent(
 			const agent = ctx.agents.get(agentId);
 			if (!agent) return;
 			const floorId = agent.floorId;
+
+			// 清理此代理的終端中繼
+			cleanupTerminalRelayForSession(event.sessionId);
 
 			removeAgent(agentId, ctx);
 			ctx.remoteAgentMap.delete(event.sessionId);

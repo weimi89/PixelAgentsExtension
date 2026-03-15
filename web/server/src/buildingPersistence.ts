@@ -10,6 +10,7 @@ import {
 	DEFAULT_FLOOR_ID,
 } from './constants.js';
 import { atomicWriteJson } from './atomicWrite.js';
+import { db } from './db/database.js';
 
 const userDir = path.join(os.homedir(), LAYOUT_FILE_DIR);
 const floorsDir = path.join(userDir, FLOOR_LAYOUT_DIR);
@@ -24,17 +25,35 @@ function getFloorLayoutPath(floorId: FloorId): string {
 
 /** 載入建築物配置，若不存在則執行遷移 */
 export function loadBuildingConfig(): BuildingConfig {
+	// 優先從 SQLite 讀取
+	if (db) {
+		const row = db.getBuilding();
+		if (row) {
+			try {
+				return JSON.parse(row.config) as BuildingConfig;
+			} catch {
+				console.error('[Pixel Agents] Failed to parse building config from DB');
+			}
+		}
+	}
+
+	// 回退至 JSON 檔案
 	const filePath = getBuildingFilePath();
 	try {
 		if (fs.existsSync(filePath)) {
-			return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as BuildingConfig;
+			const config = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as BuildingConfig;
+			// 同步至 DB（若可用）
+			if (db) {
+				db.saveBuilding(JSON.stringify(config), config.defaultFloorId);
+			}
+			return config;
 		}
 	} catch (err) {
 		console.error('[Pixel Agents] Failed to read building config:', err);
 	}
 
 	// 遷移：建立預設建築物配置
-	console.log('[Pixel Agents] No building.json found, creating default with migration');
+	console.log('[Pixel Agents] No building config found, creating default with migration');
 	const defaultConfig: BuildingConfig = {
 		version: 1,
 		defaultFloorId: DEFAULT_FLOOR_ID,
@@ -46,27 +65,60 @@ export function loadBuildingConfig(): BuildingConfig {
 	try {
 		if (fs.existsSync(oldLayoutPath)) {
 			const layout = fs.readFileSync(oldLayoutPath, 'utf-8');
-			const floorPath = getFloorLayoutPath(DEFAULT_FLOOR_ID);
-			if (!fs.existsSync(floorPath)) {
-				atomicWriteJson(floorPath, JSON.parse(layout));
-				console.log(`[Pixel Agents] Migrated layout.json → floors/${DEFAULT_FLOOR_ID}.json`);
+			const parsed = JSON.parse(layout) as Record<string, unknown>;
+			if (db) {
+				db.saveFloor(DEFAULT_FLOOR_ID, '1F 大廳', 1, JSON.stringify(parsed));
+			} else {
+				const floorPath = getFloorLayoutPath(DEFAULT_FLOOR_ID);
+				if (!fs.existsSync(floorPath)) {
+					atomicWriteJson(floorPath, parsed);
+				}
 			}
+			console.log(`[Pixel Agents] Migrated layout.json → floor ${DEFAULT_FLOOR_ID}`);
 		}
 	} catch (err) {
 		console.error('[Pixel Agents] Migration error:', err);
 	}
 
+	// 寫入 DB 和 JSON 備份
+	if (db) {
+		db.saveBuilding(JSON.stringify(defaultConfig), defaultConfig.defaultFloorId);
+	}
 	atomicWriteJson(filePath, defaultConfig);
 	return defaultConfig;
 }
 
 /** 寫入建築物配置 */
 export function writeBuildingConfig(config: BuildingConfig): void {
+	if (db) {
+		db.saveBuilding(JSON.stringify(config), config.defaultFloorId);
+		// 同步樓層到 DB
+		for (const floor of config.floors) {
+			const existingFloor = db.getFloor(floor.id);
+			if (existingFloor) {
+				// 更新名稱和排序，保留佈局
+				db.saveFloor(floor.id, floor.name, floor.order, existingFloor.layout);
+			}
+		}
+	}
 	atomicWriteJson(getBuildingFilePath(), config);
 }
 
 /** 讀取樓層佈局 */
 export function readFloorLayout(floorId: FloorId): Record<string, unknown> | null {
+	// 優先從 SQLite 讀取
+	if (db) {
+		const row = db.getFloor(floorId);
+		if (row) {
+			try {
+				return JSON.parse(row.layout) as Record<string, unknown>;
+			} catch {
+				console.error(`[Pixel Agents] Failed to parse floor layout ${floorId} from DB`);
+			}
+		}
+	}
+
+	// 回退至 JSON 檔案
 	const filePath = getFloorLayoutPath(floorId);
 	try {
 		if (!fs.existsSync(filePath)) return null;
@@ -79,6 +131,16 @@ export function readFloorLayout(floorId: FloorId): Record<string, unknown> | nul
 
 /** 寫入樓層佈局 */
 export function writeFloorLayout(floorId: FloorId, layout: Record<string, unknown>): void {
+	if (db) {
+		// 取得現有樓層 metadata 或使用預設值
+		const existing = db.getFloor(floorId);
+		db.saveFloor(
+			floorId,
+			existing?.name ?? floorId,
+			existing?.sort_order ?? 0,
+			JSON.stringify(layout),
+		);
+	}
 	atomicWriteJson(getFloorLayoutPath(floorId), layout);
 }
 
@@ -109,6 +171,10 @@ export function addFloor(building: BuildingConfig, name: string): FloorConfig {
 	const newId = `${newOrder}F`;
 	const floor: FloorConfig = { id: newId, name, order: newOrder };
 	building.floors.push(floor);
+	// 在 DB 中建立空樓層記錄
+	if (db) {
+		db.saveFloor(newId, name, newOrder, '{}');
+	}
 	writeBuildingConfig(building);
 	return floor;
 }
@@ -122,6 +188,10 @@ export function removeFloor(building: BuildingConfig, floorId: FloorId): boolean
 	// 若移除的是預設樓層，將預設設為第一層
 	if (building.defaultFloorId === floorId) {
 		building.defaultFloorId = building.floors[0].id;
+	}
+	// 從 DB 中刪除樓層
+	if (db) {
+		db.deleteFloor(floorId);
 	}
 	writeBuildingConfig(building);
 	return true;

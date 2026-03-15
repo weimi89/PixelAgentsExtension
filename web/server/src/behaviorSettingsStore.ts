@@ -3,8 +3,10 @@ import { homedir } from 'os';
 import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { LAYOUT_FILE_DIR } from './constants.js';
 import { atomicWriteJson } from './atomicWrite.js';
+import { db } from './db/database.js';
 
 const BEHAVIOR_SETTINGS_FILE = 'behavior-settings.json';
+const BEHAVIOR_SETTINGS_DB_KEY = 'behavior_settings';
 
 export interface BehaviorSettings {
 	wanderWeightIdleLook: number;
@@ -51,6 +53,21 @@ function getBehaviorSettingsPath(): string {
 }
 
 export function readBehaviorSettings(): BehaviorSettings {
+	// 優先從 DB 讀取
+	if (db) {
+		const raw = db.getSetting(BEHAVIOR_SETTINGS_DB_KEY);
+		if (raw) {
+			try {
+				const data = JSON.parse(raw) as Partial<BehaviorSettings>;
+				return { ...DEFAULT_BEHAVIOR_SETTINGS, ...data };
+			} catch {
+				// 忽略解析錯誤，回退至預設值
+			}
+		}
+		return { ...DEFAULT_BEHAVIOR_SETTINGS };
+	}
+
+	// 回退至 JSON 檔案
 	const filePath = getBehaviorSettingsPath();
 	try {
 		const data = JSON.parse(readFileSync(filePath, 'utf-8'));
@@ -62,6 +79,14 @@ export function readBehaviorSettings(): BehaviorSettings {
 
 export function writeBehaviorSettings(settings: Partial<BehaviorSettings>): BehaviorSettings {
 	const merged = { ...DEFAULT_BEHAVIOR_SETTINGS, ...settings };
+
+	// 寫入 DB（若可用）
+	if (db) {
+		db.setSetting(BEHAVIOR_SETTINGS_DB_KEY, JSON.stringify(merged));
+		return merged;
+	}
+
+	// 回退至 JSON 檔案
 	atomicWriteJson(getBehaviorSettingsPath(), merged);
 	return merged;
 }

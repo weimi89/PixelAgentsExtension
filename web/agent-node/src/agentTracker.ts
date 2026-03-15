@@ -84,6 +84,20 @@ export class AgentTracker {
 		return new Set(this.tracked.keys());
 	}
 
+	/** 取得指定 sessionId 的專案目錄（供終端中繼使用） */
+	getProjectDir(sessionId: string): string | undefined {
+		return this.tracked.get(sessionId)?.projectDir;
+	}
+
+	/** 取得所有 sessionId → projectDir 的映射（供終端中繼使用） */
+	getProjectDirs(): Map<string, string> {
+		const dirs = new Map<string, string>();
+		for (const [sessionId, agent] of this.tracked) {
+			dirs.set(sessionId, agent.projectDir);
+		}
+		return dirs;
+	}
+
 	/** 清理所有追蹤 */
 	destroy(): void {
 		for (const sessionId of [...this.tracked.keys()]) {

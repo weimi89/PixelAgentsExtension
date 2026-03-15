@@ -9,6 +9,7 @@ import { startFileWatching, readNewLines } from './fileWatcher.js';
 import { JSONL_POLL_INTERVAL_MS, JSONL_POLL_TIMEOUT_MS, LAYOUT_FILE_DIR, AGENTS_FILE_NAME, DEFAULT_FLOOR_ID } from './constants.js';
 import { getCustomName, isProjectExcluded } from './projectNameStore.js';
 import { resolveFloorForProject } from './floorAssignment.js';
+import { db } from './db/database.js';
 import {
 	isTmuxAvailable,
 	tmuxSessionName as buildTmuxName,
@@ -131,7 +132,7 @@ function getAgentsFilePath(): string {
 	return path.join(os.homedir(), LAYOUT_FILE_DIR, AGENTS_FILE_NAME);
 }
 
-/** 將所有代理狀態持久化至磁碟 */
+/** 將所有代理狀態持久化至磁碟（及 DB） */
 export function savePersistedAgents(agents: Map<number, AgentState>): void {
 	const data: PersistedAgent[] = [];
 	for (const agent of agents.values()) {
@@ -148,6 +149,24 @@ export function savePersistedAgents(agents: Map<number, AgentState>): void {
 			...(agent.cliType !== 'claude' ? { cliType: agent.cliType } : {}),
 			...(g.xp > 0 ? { xp: g.xp, toolCallCount: g.toolCallCount, sessionCount: g.sessionCount, bashCallCount: g.bashCallCount, achievements: g.achievements } : {}),
 		});
+
+		// 同步成長資料至 DB agent_appearances 表
+		if (db && g.xp > 0) {
+			const agentKey = path.basename(agent.projectDir);
+			try {
+				db.saveAgentAppearance(agentKey, {
+					floorId: agent.floorId,
+					cliType: agent.cliType !== 'claude' ? agent.cliType : null,
+					xp: g.xp,
+					toolCallCount: g.toolCallCount,
+					sessionCount: g.sessionCount,
+					bashCallCount: g.bashCallCount,
+					achievements: g.achievements,
+				});
+			} catch {
+				// 忽略 DB 寫入錯誤，JSON 檔案作為備份
+			}
+		}
 	}
 	try {
 		const filePath = getAgentsFilePath();
@@ -307,6 +326,11 @@ function spawnCliAgent(
 	ctx.incrementFloorCount(floorId);
 	recordSessionStart(id, agent, floorSend);
 	persistAgents();
+	// 記錄代理上線歷史
+	if (db) {
+		const agentKey = path.basename(projectDir);
+		db.addAgentHistory(agentKey, 'online', `agent_id=${id} cli=${cliType}`);
+	}
 	console.log(`[Pixel Agents] Agent ${id}: ${label} (floor: ${floorId})`);
 	const isExternal = projectDir !== ctx.ownProjectDir;
 	floorSend.postMessage({
@@ -398,6 +422,11 @@ export function removeAgent(
 		ctx.remoteAgentMap.delete(agent.remoteSessionId);
 	}
 	ctx.decrementFloorCount(agent.floorId);
+	// 記錄代理離線歷史
+	if (db) {
+		const agentKey = path.basename(agent.projectDir);
+		db.addAgentHistory(agentKey, 'offline', `agent_id=${agentId}`);
+	}
 	agents.delete(agentId);
 	persistAgents();
 }

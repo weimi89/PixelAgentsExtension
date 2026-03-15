@@ -33,6 +33,10 @@ import { Recorder } from './office/engine/recorder.js'
 import type { RecordingState, RecordingFrame } from './office/engine/recorder.js'
 import { saveRecording } from './office/engine/recordingStorage.js'
 import { Dashboard } from './pages/Dashboard.js'
+import { AchievementToast } from './components/AchievementToast.js'
+import { TeamPanel } from './components/TeamPanel.js'
+import { LayoutSharePanel } from './components/LayoutSharePanel.js'
+import { useTheme } from './hooks/useTheme.js'
 import { t } from './i18n.js'
 
 // 遊戲狀態存在於 React 之外 — 由訊息處理器以命令式方式更新
@@ -145,7 +149,9 @@ function App() {
 
   const display = useDisplaySettings()
 
-  const { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, projectDirs, currentFloorId, building, floorSummaries, chatMessages, agentGitBranches, agentStatusHistory, agentTeams, agentCliTypes, lanPeers, agentGrowthData, agentStartTimes } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty, editor.handleZoomChange, display.handleUiScaleLoaded)
+  const { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, projectDirs, currentFloorId, building, floorSummaries, chatMessages, agentGitBranches, agentStatusHistory, agentTeams, agentCliTypes, lanPeers, agentGrowthData, agentStartTimes, nodeHealthNodes, pendingAchievementToasts, dismissAchievementToast } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty, editor.handleZoomChange, display.handleUiScaleLoaded)
+
+  const { theme, toggleTheme } = useTheme()
 
   const connected = useConnectionState()
 
@@ -156,6 +162,11 @@ function App() {
   const interaction = useInteractionState(getOfficeState)
 
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Phase 6 面板狀態
+  const [isTeamPanelOpen, setIsTeamPanelOpen] = useState(false)
+  const [isLayoutShareOpen, setIsLayoutShareOpen] = useState(false)
+  const [teamFilter, setTeamFilter] = useState<string | null>(null)
 
   // 錄製/回放狀態
   const [recorderState, setRecorderState] = useState<RecordingState>('idle')
@@ -370,12 +381,19 @@ function App() {
         uiScale={display.uiScale}
         onUiScaleChange={display.handleUiScaleChange}
         lanPeers={lanPeers}
+        nodeHealthNodes={nodeHealthNodes}
         isSettingsOpen={panels.isSettingsOpen}
         onToggleSettings={panels.handleToggleSettings}
         isBehaviorEditorOpen={panels.isBehaviorEditorOpen}
         onToggleBehaviorEditor={panels.handleToggleBehaviorEditor}
         isTemplatesOpen={panels.isTemplatesOpen}
         onToggleTemplates={panels.handleToggleTemplates}
+        theme={theme}
+        onThemeToggle={toggleTheme}
+        isTeamPanelOpen={isTeamPanelOpen}
+        onToggleTeamPanel={() => setIsTeamPanelOpen((v) => !v)}
+        isLayoutShareOpen={isLayoutShareOpen}
+        onToggleLayoutShare={() => setIsLayoutShareOpen((v) => !v)}
         recorderState={recorderState}
         recordingDuration={recordingDuration}
         playbackProgress={playbackProgress}
@@ -525,6 +543,8 @@ function App() {
           zoom={editor.zoom}
           panRef={editor.panRef}
           subagentCharacters={subagentCharacters}
+          remoteAgents={remoteAgents}
+          nodeHealthNodes={nodeHealthNodes}
         />
       )}
 
@@ -566,6 +586,31 @@ function App() {
           onSelectTab={terminal.setActiveTerminalTabId}
           onCloseTab={terminal.handleCloseTerminalTab}
           onClosePanel={terminal.handleCloseTerminalPanel}
+        />
+      )}
+
+      {/* Phase 6: 團隊面板 */}
+      <TeamPanel
+        isOpen={isTeamPanelOpen}
+        onClose={() => setIsTeamPanelOpen(false)}
+        agentTeams={agentTeams}
+        agentProjects={agentProjects}
+        agents={agents}
+        selectedTeamFilter={teamFilter}
+        onTeamFilterChange={setTeamFilter}
+      />
+
+      {/* Phase 6: 佈局分享面板 */}
+      <LayoutSharePanel
+        isOpen={isLayoutShareOpen}
+        onClose={() => setIsLayoutShareOpen(false)}
+      />
+
+      {/* Phase 6: 成就通知 */}
+      {pendingAchievementToasts.length > 0 && (
+        <AchievementToast
+          achievementId={pendingAchievementToasts[0]}
+          onDismiss={dismissAchievementToast}
         />
       )}
 

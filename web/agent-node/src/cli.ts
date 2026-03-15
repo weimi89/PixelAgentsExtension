@@ -3,9 +3,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as readline from 'readline';
+import { spawn } from 'child_process';
 import { AgentNodeConnection } from './connection.js';
 import { AgentTracker } from './agentTracker.js';
 import { Scanner } from './scanner.js';
+import { TerminalRelay } from './terminalRelay.js';
 
 const CONFIG_DIR = path.join(os.homedir(), '.pixel-agents');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'node-config.json');
@@ -88,6 +90,70 @@ function start(serverUrl: string, token: string): void {
 		connection.sendEvent(event);
 	});
 
+	// 終端中繼 — 伺服器可透過 Agent Node 遠端開啟代理的終端
+	const terminalRelay = new TerminalRelay(
+		{
+			onData(sessionId, data) {
+				connection.sendEvent({ type: 'terminalData', sessionId, data });
+			},
+			onExit(sessionId, code) {
+				connection.sendEvent({ type: 'terminalExit', sessionId, code });
+			},
+			onReady(sessionId) {
+				connection.sendEvent({ type: 'terminalReady', sessionId });
+			},
+			onError(sessionId, message) {
+				connection.sendEvent({ type: 'terminalError', sessionId, message });
+			},
+		},
+		(sessionId) => tracker.getProjectDir(sessionId),
+	);
+
+	connection.setTerminalHandler({
+		onAttach(sessionId, cols, rows) {
+			terminalRelay.attach(sessionId, cols, rows);
+		},
+		onInput(sessionId, data) {
+			terminalRelay.input(sessionId, data);
+		},
+		onResize(sessionId, cols, rows) {
+			terminalRelay.resize(sessionId, cols, rows);
+		},
+		onDetach(sessionId) {
+			terminalRelay.detach(sessionId);
+		},
+	});
+
+	// 會話恢復處理器 — 伺服器可透過 Agent Node 遠端恢復 Claude 會話
+	connection.setResumeHandler({
+		onResumeSession(sessionId, projectDir) {
+			console.log(`[Agent Node] Resuming session ${sessionId} in ${projectDir}`);
+			try {
+				const child = spawn('claude', ['--resume', sessionId], {
+					cwd: projectDir,
+					stdio: 'ignore',
+					detached: true,
+					env: { ...process.env },
+				});
+				child.unref();
+				connection.sendEvent({
+					type: 'sessionResumed',
+					sessionId,
+					success: true,
+				});
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				console.error(`[Agent Node] Failed to resume session: ${message}`);
+				connection.sendEvent({
+					type: 'sessionResumed',
+					sessionId,
+					success: false,
+					error: message,
+				});
+			}
+		},
+	});
+
 	const scanner = new Scanner(tracker);
 
 	connection.connect();
@@ -98,6 +164,7 @@ function start(serverUrl: string, token: string): void {
 		console.log('\n[Agent Node] Shutting down...');
 		scanner.stop();
 		tracker.destroy();
+		terminalRelay.destroy();
 		connection.disconnect();
 		process.exit(0);
 	}

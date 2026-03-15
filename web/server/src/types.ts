@@ -127,7 +127,8 @@ export type ClientMessage =
 	| { type: 'saveBehaviorSettings'; settings: Record<string, number> }
 	| { type: 'requestBehaviorSettings' }
 	| { type: 'requestLayoutTemplates' }
-	| { type: 'loadLayoutTemplate'; templateId: string; floorId?: FloorId };
+	| { type: 'loadLayoutTemplate'; templateId: string; floorId?: FloorId }
+	| { type: 'requestNodeHealth' };
 
 /** 代理上下文 — 集中管理所有共享狀態與計時器，避免函式傳遞大量參數 */
 export interface AgentContext {

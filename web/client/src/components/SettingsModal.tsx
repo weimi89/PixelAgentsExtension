@@ -2,7 +2,12 @@ import { useState, useRef, useEffect } from 'react'
 import { vscode, onServerMessage } from '../socketApi.js'
 import { isSoundEnabled, setSoundEnabled, getSoundConfig, setSoundConfig } from '../notificationSound.js'
 import type { SoundConfig } from '../notificationSound.js'
-import { t } from '../i18n.js'
+import type { ConnectedNodeInfo } from '../types/messages.js'
+import { NodeHealthPanel } from './NodeHealthPanel.js'
+import { UserManagementPanel } from './UserManagementPanel.js'
+import { t, getLocale, setLocale, AVAILABLE_LOCALES, LOCALE_LABELS } from '../i18n.js'
+import type { Locale } from '../i18n.js'
+import type { Theme } from '../hooks/useTheme.js'
 
 interface LanPeerInfo {
   name: string
@@ -23,6 +28,12 @@ interface SettingsModalProps {
   uiScale: number
   onUiScaleChange: (scale: number) => void
   lanPeers: LanPeerInfo[]
+  nodeHealthNodes: ConnectedNodeInfo[]
+  /** JWT token 供使用者管理 API 認證（可為 null 若未登入） */
+  authToken?: string | null
+  /** 主題 */
+  theme: Theme
+  onThemeToggle: () => void
 }
 
 const menuItemBase: React.CSSProperties = {
@@ -40,7 +51,7 @@ const menuItemBase: React.CSSProperties = {
   textAlign: 'left',
 }
 
-export function SettingsModal({ isOpen, onClose, isDebugMode, onToggleDebugMode, dayNightEnabled, onToggleDayNight, dayNightTimeOverride, onDayNightTimeOverrideChange, uiScale, onUiScaleChange, lanPeers }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, isDebugMode, onToggleDebugMode, dayNightEnabled, onToggleDayNight, dayNightTimeOverride, onDayNightTimeOverrideChange, uiScale, onUiScaleChange, lanPeers, nodeHealthNodes, authToken, theme, onThemeToggle }: SettingsModalProps) {
   const [hovered, setHovered] = useState<string | null>(null)
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled)
   const [soundCfg, setSoundCfg] = useState<SoundConfig>(getSoundConfig)
@@ -48,6 +59,9 @@ export function SettingsModal({ isOpen, onClose, isDebugMode, onToggleDebugMode,
   const [lanEnabled, setLanEnabled] = useState(false)
   const [lanName, setLanName] = useState('')
   const lanNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [isNodeHealthOpen, setIsNodeHealthOpen] = useState(false)
+  const [isUserMgmtOpen, setIsUserMgmtOpen] = useState(false)
+  const [currentLocale, setCurrentLocale] = useState(getLocale)
   // Escape 鍵關閉
   useEffect(() => {
     if (!isOpen) return
@@ -505,6 +519,35 @@ export function SettingsModal({ isOpen, onClose, isDebugMode, onToggleDebugMode,
             {uiScale}x
           </span>
         </div>
+        <div style={{ borderTop: '1px solid var(--pixel-border)', marginTop: '4px', paddingTop: '4px' }}>
+          <button
+            onClick={() => setIsNodeHealthOpen(true)}
+            onMouseEnter={() => setHovered('nodehealth')}
+            onMouseLeave={() => setHovered(null)}
+            style={{
+              ...menuItemBase,
+              background: hovered === 'nodehealth' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+            }}
+          >
+            <span>{t.remoteNodes}</span>
+            {nodeHealthNodes.length > 0 && (
+              <span style={{ fontSize: '18px', color: 'rgba(255, 255, 255, 0.4)' }}>
+                {nodeHealthNodes.length}
+              </span>
+            )}
+          </button>
+        </div>
+        <button
+          onClick={() => setIsUserMgmtOpen(true)}
+          onMouseEnter={() => setHovered('usermgmt')}
+          onMouseLeave={() => setHovered(null)}
+          style={{
+            ...menuItemBase,
+            background: hovered === 'usermgmt' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+          }}
+        >
+          {t.userManagement}
+        </button>
         <button
           onClick={() => {
             window.open(`${window.location.origin}${window.location.pathname}#/dashboard`, '_blank')
@@ -518,6 +561,58 @@ export function SettingsModal({ isOpen, onClose, isDebugMode, onToggleDebugMode,
           }}
         >
           {t.openDashboard}
+        </button>
+        {/* 語言切換 */}
+        <div style={{ borderTop: '1px solid var(--pixel-border)', marginTop: '4px', paddingTop: '4px' }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 10px',
+          }}>
+            <span style={{ fontSize: '24px', color: 'rgba(255, 255, 255, 0.8)' }}>
+              {t.language}
+            </span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {AVAILABLE_LOCALES.map((locale) => (
+                <button
+                  key={locale}
+                  onClick={() => {
+                    setLocale(locale as Locale)
+                    setCurrentLocale(locale as Locale)
+                    // 強制刷新讓 Proxy 生效
+                    window.location.reload()
+                  }}
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '18px',
+                    background: currentLocale === locale ? 'var(--pixel-active-bg)' : 'var(--pixel-btn-bg)',
+                    border: currentLocale === locale ? '2px solid var(--pixel-accent)' : '2px solid transparent',
+                    borderRadius: 0,
+                    color: 'var(--pixel-text)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {LOCALE_LABELS[locale as Locale]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        {/* 主題切換 */}
+        <button
+          onClick={onThemeToggle}
+          onMouseEnter={() => setHovered('theme')}
+          onMouseLeave={() => setHovered(null)}
+          style={{
+            ...menuItemBase,
+            background: hovered === 'theme' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+          }}
+        >
+          <span>{t.theme}</span>
+          <span style={{ fontSize: '20px', color: 'var(--pixel-accent)' }}>
+            {theme === 'dark' ? t.darkTheme : t.lightTheme}
+          </span>
         </button>
         <button
           onClick={onToggleDebugMode}
@@ -542,6 +637,16 @@ export function SettingsModal({ isOpen, onClose, isDebugMode, onToggleDebugMode,
           )}
         </button>
       </div>
+      <NodeHealthPanel
+        isOpen={isNodeHealthOpen}
+        onClose={() => setIsNodeHealthOpen(false)}
+        nodes={nodeHealthNodes}
+      />
+      <UserManagementPanel
+        isOpen={isUserMgmtOpen}
+        onClose={() => setIsUserMgmtOpen(false)}
+        token={authToken ?? null}
+      />
     </>
   )
 }

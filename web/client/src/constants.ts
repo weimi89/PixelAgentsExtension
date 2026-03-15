@@ -276,6 +276,13 @@ export const TEAM_CONNECTION_LINE_ALPHA = 0.3
 export const TEAM_CONNECTION_LINE_WIDTH = 1
 export const TEAM_CONNECTION_DASH: [number, number] = [3, 3]
 
+// ── 角色外觀基礎建設 ──────────────────────────────────────────
+export const CHARACTER_PALETTE_NAMES = ['\u7D05', '\u85CD', '\u7DA0', '\u7D2B', '\u6A59', '\u9752'] as const
+export const MAX_CUSTOM_PALETTES = 12  // 可擴展至超過目前 6 種
+
+// ── 成就通知 ──────────────────────────────────────────────────
+export const ACHIEVEMENT_TOAST_DURATION_MS = 3000
+
 // ── 錄製/回放 ────────────────────────────────────────────────
 export const RECORDING_FPS = 24
 export const RECORDING_KEYFRAME_INTERVAL_FRAMES = 120  // 每 5 秒（24fps × 5s）

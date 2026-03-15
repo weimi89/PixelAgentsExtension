@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import type { OfficeState } from '../office/engine/officeState.js'
 import type { OfficeLayout, ToolActivity, EmoteType } from '../office/types.js'
-import type { ServerMessage, BuildingConfig } from '../types/messages.js'
+import type { ServerMessage, BuildingConfig, ConnectedNodeInfo } from '../types/messages.js'
 import { extractToolName } from '../office/toolUtils.js'
 import { migrateLayoutColors } from '../office/layout/layoutSerializer.js'
 import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js'
@@ -89,6 +89,12 @@ export interface ExtensionMessageState {
   agentGrowthData: Record<number, { xp: number; level: number; achievements: string[] }>
   /** agentId → 開始工作時間戳（ms） */
   agentStartTimes: Record<number, number>
+  /** 已連線的遠端節點健康資訊 */
+  nodeHealthNodes: ConnectedNodeInfo[]
+  /** 待顯示的成就通知佇列 */
+  pendingAchievementToasts: string[]
+  /** 移除已顯示的成就通知 */
+  dismissAchievementToast: () => void
 }
 
 /** 轉錄記錄條目 */
@@ -142,6 +148,8 @@ interface HandlerContext {
   setLanPeers: React.Dispatch<React.SetStateAction<Array<{ name: string; host: string; port: number; agentCount: number }>>>
   setAgentGrowthData: React.Dispatch<React.SetStateAction<Record<number, { xp: number; level: number; achievements: string[] }>>>
   setAgentStartTimes: React.Dispatch<React.SetStateAction<Record<number, number>>>
+  setNodeHealthNodes: React.Dispatch<React.SetStateAction<ConnectedNodeInfo[]>>
+  setPendingAchievementToasts: React.Dispatch<React.SetStateAction<string[]>>
 }
 
 // ── Message Handlers ───────────────────────────────────────────
@@ -597,6 +605,10 @@ function handleBehaviorSettingsLoaded(msg: ServerMessage & { type: 'behaviorSett
   setBehaviorConfig(msg.settings as Record<string, number>)
 }
 
+function handleNodeHealth(msg: ServerMessage & { type: 'nodeHealth' }, ctx: HandlerContext): void {
+  ctx.setNodeHealthNodes(msg.nodes)
+}
+
 function handleAgentGrowth(msg: ServerMessage & { type: 'agentGrowth' }, ctx: HandlerContext): void {
   // 更新 OfficeState 中角色的等級
   const ch = ctx.os.characters.get(msg.id)
@@ -608,6 +620,10 @@ function handleAgentGrowth(msg: ServerMessage & { type: 'agentGrowth' }, ctx: Ha
     ...prev,
     [msg.id]: { xp: msg.xp, level: msg.level, achievements: msg.achievements },
   }))
+  // 新成就通知
+  if (msg.newAchievements && msg.newAchievements.length > 0) {
+    ctx.setPendingAchievementToasts((prev) => [...prev, ...msg.newAchievements])
+  }
 }
 
 function handleFloorSwitched(msg: ServerMessage & { type: 'floorSwitched' }, ctx: HandlerContext): void {
@@ -678,6 +694,7 @@ const messageHandlers: Record<string, HandlerFn> = {
   lanPeers: handleLanPeers as HandlerFn,
   behaviorSettingsLoaded: handleBehaviorSettingsLoaded as HandlerFn,
   agentGrowth: handleAgentGrowth as HandlerFn,
+  nodeHealth: handleNodeHealth as HandlerFn,
 }
 
 // ── Hook ────────────────────────────────────────────────────────
@@ -714,6 +731,12 @@ export function useExtensionMessages(
   const [lanPeers, setLanPeers] = useState<Array<{ name: string; host: string; port: number; agentCount: number }>>([])
   const [agentGrowthData, setAgentGrowthData] = useState<Record<number, { xp: number; level: number; achievements: string[] }>>({})
   const [agentStartTimes, setAgentStartTimes] = useState<Record<number, number>>({})
+  const [nodeHealthNodes, setNodeHealthNodes] = useState<ConnectedNodeInfo[]>([])
+  const [pendingAchievementToasts, setPendingAchievementToasts] = useState<string[]>([])
+
+  const dismissAchievementToast = useCallback(() => {
+    setPendingAchievementToasts((prev) => prev.slice(1))
+  }, [])
 
   const layoutReadyRef = useRef(false)
   const pendingAgentsRef = useRef<Array<{ id: number; palette?: number; hueShift?: number; seatId?: string }>>([])
@@ -752,6 +775,8 @@ export function useExtensionMessages(
       setLanPeers,
       setAgentGrowthData,
       setAgentStartTimes,
+      setNodeHealthNodes,
+      setPendingAchievementToasts,
     }
 
     const handler = (data: unknown) => {
@@ -767,5 +792,5 @@ export function useExtensionMessages(
     return unsub
   }, [getOfficeState])
 
-  return { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, excludedProjects, projectDirs, currentFloorId, building, floorSummaries, chatMessages, agentGitBranches, agentStatusHistory, agentTeams, agentCliTypes, lanPeers, agentGrowthData, agentStartTimes }
+  return { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, excludedProjects, projectDirs, currentFloorId, building, floorSummaries, chatMessages, agentGitBranches, agentStatusHistory, agentTeams, agentCliTypes, lanPeers, agentGrowthData, agentStartTimes, nodeHealthNodes, pendingAchievementToasts, dismissAchievementToast }
 }

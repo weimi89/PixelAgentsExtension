@@ -46,6 +46,13 @@ export const PROJECT_FLOOR_MAP_FILE_NAME = 'project-floor-map.json';
 // ── 自動偵測 ──────────────────────────────────────────
 export const ACTIVE_JSONL_MAX_AGE_MS = 30_000; // 30 秒 — 在此時間窗口內被修改的檔案視為「活躍」
 export const STALE_AGENT_TIMEOUT_MS = 3_600_000; // 1 小時 — 超過此時間無 JSONL 更新才視為過期
+
+// ── 動態掃描間隔 ──────────────────────────────────────
+export const PROJECT_SCAN_MIN_INTERVAL_MS = 1_000;   // 有 10+ 活躍代理時最快 1s
+export const PROJECT_SCAN_MAX_INTERVAL_MS = 10_000;  // 無代理時最慢 10s
+
+// ── Gemini 大檔案閾值 ──────────────────────────────────
+export const GEMINI_LARGE_FILE_THRESHOLD_BYTES = 100 * 1024; // 100KB — 超過此大小使用尾部讀取優化
 /** 掃描時忽略的專案目錄名稱模式（例如 claude-mem observer sessions） */
 export const IGNORED_PROJECT_DIR_PATTERNS = ['observer-sessions'];
 
@@ -65,6 +72,7 @@ export const MAX_STATUS_HISTORY = 50;
 
 // ── 認證 ──────────────────────────────────────────────────────
 export const AUTH_TOKEN_EXPIRY_DAYS = 30;
+export const PASSWORD_MIN_LENGTH = 8;
 export const JWT_SECRET_FILE_NAME = 'jwt-secret.key';
 export const USERS_FILE_NAME = 'users.json';
 
@@ -84,10 +92,55 @@ export const TERMINAL_DEFAULT_COLS = 80;
 export const TERMINAL_DEFAULT_ROWS = 24;
 
 // ── 伺服器 ──────────────────────────────────────────────────
-export const DEFAULT_PORT = 3000;
+export const DEFAULT_PORT = 13001;
 export const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 5000; // 強制退出前的寬限時間
 export const SOCKET_IO_MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB，用於大型素材傳輸
 export const GIT_ROOT_MAX_DEPTH = 50; // findGitRoot 最大向上搜尋深度（防止符號連結循環）
 
+// ── Agent Node 心跳 ──────────────────────────────────────────
+export const AGENT_NODE_HEARTBEAT_INTERVAL_MS = 30_000; // Agent Node 每 30s 發送一次心跳
+export const AGENT_NODE_HEARTBEAT_TIMEOUT_MS = 90_000; // 90s 無心跳視為斷線
+export const NODE_HEALTH_BROADCAST_INTERVAL_MS = 10_000; // 每 10s 廣播節點健康狀態
+
+// ── 統計刷新 ──────────────────────────────────────────────────
+export const STATS_FLUSH_INTERVAL_MS = 30_000; // 統計資料髒旗標檢查間隔
+
+// ── 壓力測試 ──────────────────────────────────────────────────
+export const STRESS_TEST_TOOL_INTERVAL_MS = 500;  // 壓力測試工具呼叫間隔
+export const STRESS_TEST_METRICS_INTERVAL_MS = 10_000;  // 指標記錄間隔
+
+// ── 速率限制 ──────────────────────────────────────────────────
+export const RATE_LIMIT_API_WINDOW_MS = 60_000;       // API 路由速率限制視窗：1 分鐘
+export const RATE_LIMIT_API_MAX_REQUESTS = 100;        // API 路由：每分鐘最多 100 次
+export const RATE_LIMIT_LOGIN_WINDOW_MS = 60_000;      // 登入速率限制視窗：1 分鐘
+export const RATE_LIMIT_LOGIN_MAX_REQUESTS = 10;       // 登入：每分鐘最多 10 次
+export const RATE_LIMIT_REGISTER_WINDOW_MS = 60_000;   // 註冊速率限制視窗：1 分鐘
+export const RATE_LIMIT_REGISTER_MAX_REQUESTS = 5;     // 註冊：每分鐘最多 5 次
+
+// ── 稽核日誌 ──────────────────────────────────────────────────
+export const AUDIT_LOG_FILE_NAME = 'audit.jsonl';
+export const AUDIT_LOG_MAX_SIZE_BYTES = 1_048_576; // 1MB — 超過此大小自動輪替
+
+// ── Socket.IO CSRF 防護 ──────────────────────────────────────
+/** 允許的來源清單（除 localhost 變體外），可透過 ALLOWED_ORIGINS 環境變數擴充（逗號分隔） */
+export const ALLOWED_ORIGINS_ENV_KEY = 'ALLOWED_ORIGINS';
+
+// ── JWT Refresh Token ─────────────────────────────────────────
+export const ACCESS_TOKEN_EXPIRY_MINUTES = 15;
+export const REFRESH_TOKEN_EXPIRY_DAYS = 30;
+
 // ── 轉錄解析 ──────────────────────────────────────────────────
 export const THINKING_DEPTH_THRESHOLD = 2000; // thinking 區塊字元數閾值，超過觸發 idea 表情
+
+// ── Redis ────────────────────────────────────────────────────────
+export const REDIS_AGENT_CACHE_TTL_MS = 3_600_000; // 1 小時 — 代理狀態快取存活時間
+export const REDIS_JWT_CACHE_TTL_MS = 900_000;      // 15 分鐘 — 與 access token 有效期對齊
+
+// ── 叢集 ────────────────────────────────────────────────────────
+export const CLUSTER_HEARTBEAT_INTERVAL_MS = 15_000;   // 叢集心跳間隔：15 秒
+export const CLUSTER_HEARTBEAT_TTL_MS = 45_000;        // 叢集心跳 TTL：45 秒（3 次心跳失敗視為離線）
+
+// ── 自動備份 ──────────────────────────────────────────────────
+export const BACKUP_INTERVAL_MS = 21_600_000; // 6 小時
+export const BACKUP_MAX_KEEP = 5;
+export const BACKUP_DIR_NAME = 'backups';

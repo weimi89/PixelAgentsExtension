@@ -12,10 +12,23 @@ export type AgentNodeEvent =
 	| { type: 'modelDetected'; sessionId: string; model: string }
 	| { type: 'turnComplete'; sessionId: string }
 	| { type: 'statusChange'; sessionId: string; status: 'waiting' | 'permission' | 'idle' }
-	| { type: 'transcript'; sessionId: string; role: 'user' | 'assistant' | 'system'; summary: string };
+	| { type: 'transcript'; sessionId: string; role: 'user' | 'assistant' | 'system'; summary: string }
+	| { type: 'heartbeat'; timestamp: number; activeSessions: number }
+	| { type: 'terminalData'; sessionId: string; data: string }
+	| { type: 'terminalExit'; sessionId: string; code: number }
+	| { type: 'terminalReady'; sessionId: string }
+	| { type: 'terminalError'; sessionId: string; message: string }
+	| { type: 'sessionResumed'; sessionId: string; success: boolean; error?: string };
 
 /** 伺服器向 Agent Node 回傳的訊息（中央 → 遠端） */
 export type ServerNodeMessage =
 	| { type: 'authenticated'; userId: string }
 	| { type: 'error'; message: string }
-	| { type: 'agentRegistered'; sessionId: string; agentId: number };
+	| { type: 'agentRegistered'; sessionId: string; agentId: number }
+	| { type: 'heartbeatAck'; timestamp: number; serverTime: number }
+	| { type: 'excludedProjectsSync'; excluded: string[] }
+	| { type: 'terminalAttach'; sessionId: string; cols: number; rows: number }
+	| { type: 'terminalInput'; sessionId: string; data: string }
+	| { type: 'terminalResize'; sessionId: string; cols: number; rows: number }
+	| { type: 'terminalDetach'; sessionId: string }
+	| { type: 'resumeSession'; sessionId: string; projectDir: string };
