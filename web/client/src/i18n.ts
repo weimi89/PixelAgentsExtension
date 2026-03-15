@@ -434,6 +434,15 @@ const zh_TW = {
 
   // P5.5 — 新手引導提示
   guideBannerMessage: '登入以編輯佈局和管理代理',
+
+  // 邀請碼管理
+  inviteCode: '邀請碼',
+  generateInvite: '生成邀請碼',
+  revokeInvite: '撤銷',
+  inviteExpired: '已過期',
+  inviteUsed: '已使用',
+  inviteActive: '有效',
+  noInvites: '尚無邀請碼',
 }
 
 /** 語言字串型別（結構型別，非 literal） */
@@ -873,6 +882,15 @@ const en_US: LocaleStrings = {
 
   // P5.5 — Guide banner
   guideBannerMessage: 'Login to edit layouts and manage agents',
+
+  // Invite code management
+  inviteCode: 'Invite Codes',
+  generateInvite: 'Generate',
+  revokeInvite: 'Revoke',
+  inviteExpired: 'Expired',
+  inviteUsed: 'Used',
+  inviteActive: 'Active',
+  noInvites: 'No invite codes',
 }
 
 // ── Locale 管理 ──────────────────────────────────────────────────

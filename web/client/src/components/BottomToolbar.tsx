@@ -169,6 +169,8 @@ interface BottomToolbarProps {
   onToggleLayoutShare: () => void
   // 認證角色（控制按鈕可見性）
   authRole: AuthRole
+  // 當前使用者 ID（用於判斷樓層所有權）
+  authUserId: string | null
   // 錄製/回放
   recorderState: RecordingState
   recordingDuration: number
@@ -246,6 +248,7 @@ export const BottomToolbar = memo(function BottomToolbar({
   isLayoutShareOpen,
   onToggleLayoutShare,
   authRole,
+  authUserId,
   recorderState,
   recordingDuration,
   playbackProgress,
@@ -262,6 +265,12 @@ export const BottomToolbar = memo(function BottomToolbar({
   const isAdmin = authRole === 'admin'
   const isMember = authRole === 'member'
   const isLoggedIn = isAdmin || isMember
+
+  // 判斷 member 是否在自己的樓層（擁有佈局編輯權限）
+  const currentFloor = floors.find(f => f.id === currentFloorId)
+  const isMemberOnOwnFloor = isMember && !!authUserId && currentFloor?.ownerId === authUserId
+  // 佈局編輯按鈕顯示條件：admin 總是可見，member 僅在自己樓層可見
+  const canEditLayout = isAdmin || isMemberOnOwnFloor
 
   // 行動版用圖示、桌面版用文字的按鈕輔助函式
   const tbBtn = (key: string, text: string, tooltip: string, icon: React.ReactNode, onClick: () => void, isActive: boolean) => (
@@ -300,8 +309,8 @@ export const BottomToolbar = memo(function BottomToolbar({
       {isLoggedIn && tbBtn('teams', t.teams, t.allTeams, <IconTeams />, onToggleTeamPanel, isTeamPanelOpen)}
       {/* 分享佈局：需登入 */}
       {isLoggedIn && tbBtn('share', t.shareLayout, t.shareLayout, <IconShare />, onToggleLayoutShare, isLayoutShareOpen)}
-      {/* 佈局編輯：需登入 */}
-      {isLoggedIn && tbBtn('edit', t.layout, t.editOfficeLayout, <IconEdit />, onToggleEditMode, isEditMode)}
+      {/* 佈局編輯：admin 總是可見，member 僅在自己樓層可見 */}
+      {canEditLayout && tbBtn('edit', t.layout, t.editOfficeLayout, <IconEdit />, onToggleEditMode, isEditMode)}
       <div style={{ position: 'relative' }}>
         {tbBtn('settings', t.settings, t.settings, <IconSettings />, onToggleSettings, isSettingsOpen)}
         <SettingsModal

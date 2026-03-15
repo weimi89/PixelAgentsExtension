@@ -43,7 +43,36 @@ function prompt(question: string): Promise<string> {
 	});
 }
 
-async function login(serverUrl: string): Promise<void> {
+/** API Key 登入 — 使用 API Key 取得 JWT token */
+async function loginWithApiKey(serverUrl: string): Promise<void> {
+	const apiKey = await prompt('API Key: ');
+	if (!apiKey) {
+		console.error('API Key is required');
+		process.exit(1);
+	}
+
+	try {
+		const res = await fetch(`${serverUrl}/api/auth/login-key`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ apiKey }),
+		});
+		if (!res.ok) {
+			const body = await res.json() as { error?: string };
+			console.error(`Login failed: ${body.error || res.statusText}`);
+			process.exit(1);
+		}
+		const data = await res.json() as { token: string; username: string };
+		writeConfig({ server: serverUrl, token: data.token });
+		console.log(`Logged in as ${data.username}. Config saved to ${CONFIG_FILE}`);
+	} catch (err) {
+		console.error('Login failed:', err instanceof Error ? err.message : err);
+		process.exit(1);
+	}
+}
+
+/** 帳號密碼登入 — 傳統登入模式 */
+async function loginWithPassword(serverUrl: string): Promise<void> {
 	const username = await prompt('Username: ');
 	const password = await prompt('Password: ');
 
@@ -180,13 +209,23 @@ async function main(): Promise<void> {
 	const command = args[0];
 
 	if (command === 'login') {
-		const serverUrl = args[1];
+		// 檢查是否使用 --password 旗標切換為帳號密碼登入模式
+		const usePassword = args.includes('--password');
+		// 從參數中提取 server URL（排除旗標）
+		const serverUrl = args.slice(1).find(a => !a.startsWith('--'));
 		if (!serverUrl) {
-			console.error('Usage: pixel-agents-node login <server-url>');
+			console.error('Usage: pixel-agents-node login <server-url> [--password]');
+			console.error('  預設使用 API Key 登入');
+			console.error('  --password  使用帳號密碼登入');
 			console.error('Example: pixel-agents-node login http://192.168.1.100:3000');
 			process.exit(1);
 		}
-		await login(serverUrl.replace(/\/$/, ''));
+		const normalizedUrl = serverUrl.replace(/\/$/, '');
+		if (usePassword) {
+			await loginWithPassword(normalizedUrl);
+		} else {
+			await loginWithApiKey(normalizedUrl);
+		}
 		return;
 	}
 
@@ -225,8 +264,9 @@ async function main(): Promise<void> {
 
 	console.error(`Unknown command: ${command}`);
 	console.error('Usage:');
-	console.error('  pixel-agents-node login <server-url>    Login and save token');
-	console.error('  pixel-agents-node start                  Start scanning');
+	console.error('  pixel-agents-node login <server-url>              API Key 登入（預設）');
+	console.error('  pixel-agents-node login <server-url> --password   帳號密碼登入');
+	console.error('  pixel-agents-node start                           Start scanning');
 	console.error('  pixel-agents-node start --server <url> --token <jwt>');
 	process.exit(1);
 }

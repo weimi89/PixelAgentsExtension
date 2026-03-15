@@ -35,9 +35,14 @@ interface AuthContextValue extends AuthState {
 // ── localStorage 鍵 ──────────────────────────────────────────────
 
 const TOKEN_KEY = 'pixel-agents-token'
+const ACCESS_TOKEN_KEY = 'pixel-agents-access-token'
+const REFRESH_TOKEN_KEY = 'pixel-agents-refresh-token'
 const USERNAME_KEY = 'pixel-agents-username'
 const ROLE_KEY = 'pixel-agents-role'
 const USERID_KEY = 'pixel-agents-userid'
+
+/** Access token 自動刷新提前量（秒） */
+const TOKEN_REFRESH_BEFORE_EXPIRY_SEC = 60
 
 // ── Context ──────────────────────────────────────────────────────
 
@@ -74,12 +79,14 @@ function loadStoredAuth(): { token: string | null; username: string | null; user
 }
 
 /** 儲存認證資訊至 localStorage */
-function saveAuth(token: string, username: string, role: AuthRole, userId?: string): void {
+function saveAuth(token: string, username: string, role: AuthRole, userId?: string, accessToken?: string, refreshToken?: string): void {
   try {
     localStorage.setItem(TOKEN_KEY, token)
     localStorage.setItem(USERNAME_KEY, username)
     localStorage.setItem(ROLE_KEY, role)
     if (userId) localStorage.setItem(USERID_KEY, userId)
+    if (accessToken) localStorage.setItem(ACCESS_TOKEN_KEY, accessToken)
+    if (refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
   } catch { /* 忽略 localStorage 不可用的情況 */ }
 }
 
@@ -87,10 +94,31 @@ function saveAuth(token: string, username: string, role: AuthRole, userId?: stri
 function clearAuth(): void {
   try {
     localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(ACCESS_TOKEN_KEY)
+    localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(USERNAME_KEY)
     localStorage.removeItem(ROLE_KEY)
     localStorage.removeItem(USERID_KEY)
   } catch { /* 忽略 */ }
+}
+
+/** 從 JWT payload 解析過期時間（秒） */
+function getTokenExpiry(token: string): number | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    const payload = JSON.parse(atob(parts[1])) as { exp?: number }
+    return payload.exp ?? null
+  } catch {
+    return null
+  }
+}
+
+/** 計算距離 token 過期的毫秒數 */
+function msUntilExpiry(token: string): number | null {
+  const exp = getTokenExpiry(token)
+  if (exp === null) return null
+  return exp * 1000 - Date.now()
 }
 
 // ── Provider 元件 ────────────────────────────────────────────────
@@ -146,17 +174,101 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsub
   }, [])
 
+  /** Token 自動刷新計時器 */
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /** 排程 access token 自動刷新 */
+  const scheduleTokenRefresh = useCallback((accessTkn: string) => {
+    // 清除既有計時器
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current)
+      refreshTimerRef.current = null
+    }
+    const ms = msUntilExpiry(accessTkn)
+    if (ms === null) return
+    // 在過期前 60 秒刷新
+    const delay = Math.max(ms - TOKEN_REFRESH_BEFORE_EXPIRY_SEC * 1000, 1000)
+    refreshTimerRef.current = setTimeout(async () => {
+      try {
+        const storedRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
+        if (!storedRefreshToken) {
+          // 無 refresh token — 清除登入狀態
+          clearAuth()
+          setToken(null)
+          setUsername(null)
+          setUserId(null)
+          setRole('anonymous')
+          setAuthToken(null)
+          return
+        }
+        const res = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: storedRefreshToken }),
+        })
+        if (!res.ok) {
+          // refresh token 也過期 — 清除登入狀態
+          console.warn('[Auth] Refresh token expired, logging out')
+          clearAuth()
+          setToken(null)
+          setUsername(null)
+          setUserId(null)
+          setRole('anonymous')
+          setAuthToken(null)
+          reconnectWithAuth()
+          return
+        }
+        const data = await res.json() as { accessToken: string; token: string }
+        // 更新 localStorage 和狀態
+        const newToken = data.accessToken || data.token
+        try {
+          localStorage.setItem(TOKEN_KEY, newToken)
+          localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken)
+        } catch { /* 忽略 */ }
+        setToken(newToken)
+        setAuthToken(newToken)
+        // 通知伺服器升級身份
+        emitRaw('auth:upgrade', { token: newToken })
+        // 排程下一次刷新
+        scheduleTokenRefresh(data.accessToken)
+      } catch {
+        console.warn('[Auth] Token refresh failed')
+      }
+    }, delay)
+  }, [])
+
+  // 清理計時器
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
+    }
+  }, [])
+
+  // 初始化時排程刷新
+  useEffect(() => {
+    const storedAccessToken = localStorage.getItem(ACCESS_TOKEN_KEY)
+    if (storedAccessToken) {
+      scheduleTokenRefresh(storedAccessToken)
+    }
+  }, [scheduleTokenRefresh])
+
   /** 處理登入/註冊成功後的共通邏輯 */
-  const handleAuthSuccess = useCallback((responseToken: string, responseUsername: string, responseRole: AuthRole, responseUserId?: string) => {
-    saveAuth(responseToken, responseUsername, responseRole, responseUserId)
-    setToken(responseToken)
+  const handleAuthSuccess = useCallback((responseToken: string, responseUsername: string, responseRole: AuthRole, responseUserId?: string, accessToken?: string, refreshToken?: string) => {
+    // 優先使用 accessToken，退回 legacy token
+    const effectiveToken = accessToken || responseToken
+    saveAuth(effectiveToken, responseUsername, responseRole, responseUserId, accessToken, refreshToken)
+    setToken(effectiveToken)
     setUsername(responseUsername)
     setRole(responseRole)
     if (responseUserId) setUserId(responseUserId)
-    setAuthToken(responseToken)
+    setAuthToken(effectiveToken)
     // 通知伺服器升級此 socket 的身份
-    emitRaw('auth:upgrade', { token: responseToken })
-  }, [])
+    emitRaw('auth:upgrade', { token: effectiveToken })
+    // 排程 access token 自動刷新
+    if (accessToken) {
+      scheduleTokenRefresh(accessToken)
+    }
+  }, [scheduleTokenRefresh])
 
   const login = useCallback(async (loginUsername: string, password: string) => {
     try {
@@ -169,7 +281,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!res.ok) {
         return { success: false, error: data.error || '登入失敗' }
       }
-      handleAuthSuccess(data.token, data.username, data.role || 'member', data.userId)
+      handleAuthSuccess(data.token, data.username, data.role || 'member', data.userId, data.accessToken, data.refreshToken)
       return {
         success: true,
         mustChangePassword: data.mustChangePassword,
@@ -191,7 +303,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!res.ok) {
         return { success: false, error: data.error || '登入失敗' }
       }
-      handleAuthSuccess(data.token, data.username, data.role || 'member', data.userId)
+      handleAuthSuccess(data.token, data.username, data.role || 'member', data.userId, data.accessToken, data.refreshToken)
       return { success: true }
     } catch {
       return { success: false, error: '網路錯誤' }
@@ -209,7 +321,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!res.ok) {
         return { success: false, error: data.error || '註冊失敗' }
       }
-      handleAuthSuccess(data.token, data.username, data.role || 'member', data.userId)
+      handleAuthSuccess(data.token, data.username, data.role || 'member', data.userId, data.accessToken, data.refreshToken)
       return { success: true, apiKey: data.apiKey }
     } catch {
       return { success: false, error: '網路錯誤' }

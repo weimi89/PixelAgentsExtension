@@ -333,7 +333,173 @@ export function UserManagementPanel({ isOpen, onClose, token }: UserManagementPa
             </div>
           </div>
         ))}
+
+        {/* ── 邀請碼管理區塊 ── */}
+        <InviteCodeSection token={token} />
       </div>
+    </>
+  )
+}
+
+// ── 邀請碼區塊元件 ──────────────────────────────────────────
+
+interface InviteInfo {
+  code: string
+  createdBy: string
+  createdAt: string
+  expiresAt?: string
+  usedBy?: string
+  usedAt?: string
+}
+
+function getInviteStatus(invite: InviteInfo): 'used' | 'expired' | 'active' {
+  if (invite.usedBy) return 'used'
+  if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) return 'expired'
+  return 'active'
+}
+
+function InviteCodeSection({ token }: { token: string | null }) {
+  const [invites, setInvites] = useState<InviteInfo[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const fetchInvites = useCallback(async () => {
+    if (!token) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/auth/invites', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const data = await res.json() as { invites: InviteInfo[] }
+        setInvites(data.invites)
+      }
+    } catch {
+      // 靜默失敗
+    } finally {
+      setLoading(false)
+    }
+  }, [token])
+
+  useEffect(() => {
+    fetchInvites()
+  }, [fetchInvites])
+
+  const handleGenerate = async () => {
+    if (!token) return
+    try {
+      const res = await fetch('/api/auth/invites', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+      })
+      if (res.ok) {
+        const data = await res.json() as { invite: InviteInfo }
+        setInvites((prev) => [...prev, data.invite])
+      }
+    } catch {
+      // 靜默失敗
+    }
+  }
+
+  const handleRevoke = async (code: string) => {
+    if (!token) return
+    try {
+      const res = await fetch(`/api/auth/invites/${encodeURIComponent(code)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        setInvites((prev) => prev.filter((inv) => inv.code !== code))
+      }
+    } catch {
+      // 靜默失敗
+    }
+  }
+
+  const sectionHeaderStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '8px 10px 4px',
+    borderTop: '2px solid var(--pixel-border)',
+    marginTop: 8,
+  }
+
+  const statusColors: Record<string, string> = {
+    active: 'rgba(100, 255, 100, 0.7)',
+    expired: 'rgba(255, 255, 100, 0.6)',
+    used: 'rgba(255, 255, 255, 0.35)',
+  }
+
+  return (
+    <>
+      <div style={sectionHeaderStyle}>
+        <span style={{ fontSize: '20px', color: 'rgba(255, 255, 255, 0.8)' }}>
+          {t.inviteCode}
+        </span>
+        <button onClick={handleGenerate} style={btnStyle}>
+          {t.generateInvite}
+        </button>
+      </div>
+
+      {loading && (
+        <div style={{ padding: '6px 10px', color: 'rgba(255, 255, 255, 0.4)', fontSize: '16px' }}>
+          {t.loading}
+        </div>
+      )}
+
+      {!loading && invites.length === 0 && (
+        <div style={{ padding: '6px 10px', color: 'rgba(255, 255, 255, 0.3)', fontSize: '16px' }}>
+          {t.noInvites}
+        </div>
+      )}
+
+      {invites.map((invite) => {
+        const status = getInviteStatus(invite)
+        return (
+          <div key={invite.code} style={{ ...rowStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <code style={{
+              flex: 1,
+              fontSize: '13px',
+              color: statusColors[status] || 'rgba(255, 255, 255, 0.5)',
+              fontFamily: 'monospace',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              userSelect: status === 'active' ? 'all' : 'none',
+            }}>
+              {invite.code}
+            </code>
+            <span style={{
+              fontSize: '12px',
+              color: statusColors[status],
+              minWidth: 48,
+              textAlign: 'center',
+            }}>
+              {status === 'used' ? t.inviteUsed : status === 'expired' ? t.inviteExpired : t.inviteActive}
+            </span>
+            <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.3)', minWidth: 70 }}>
+              {new Date(invite.createdAt).toLocaleDateString()}
+            </span>
+            {status === 'active' && (
+              <button
+                onClick={() => handleRevoke(invite.code)}
+                style={{
+                  ...btnStyle,
+                  fontSize: '12px',
+                  color: 'rgba(255, 100, 100, 0.8)',
+                  borderColor: 'rgba(255, 100, 100, 0.3)',
+                }}
+              >
+                {t.revokeInvite}
+              </button>
+            )}
+          </div>
+        )
+      })}
     </>
   )
 }

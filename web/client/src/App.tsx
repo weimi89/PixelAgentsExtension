@@ -403,6 +403,7 @@ function App() {
         isLayoutShareOpen={isLayoutShareOpen}
         onToggleLayoutShare={() => setIsLayoutShareOpen((v) => !v)}
         authRole={auth.role}
+        authUserId={auth.userId}
         recorderState={recorderState}
         recordingDuration={recordingDuration}
         playbackProgress={playbackProgress}

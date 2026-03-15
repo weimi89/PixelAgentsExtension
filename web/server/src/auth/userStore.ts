@@ -3,11 +3,118 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { LAYOUT_FILE_DIR, USERS_FILE_NAME } from '../constants.js';
+import { LAYOUT_FILE_DIR, USERS_FILE_NAME, JWT_SECRET_FILE_NAME } from '../constants.js';
 import { atomicWriteJson } from '../atomicWrite.js';
 import { db } from '../db/database.js';
 
 const userDir = path.join(os.homedir(), LAYOUT_FILE_DIR);
+
+// ── AES-256-GCM API Key 加密 ──────────────────────────────────────
+
+/** 加密演算法 */
+const CIPHER_ALGORITHM = 'aes-256-gcm';
+/** IV 長度（位元組） */
+const IV_LENGTH = 12;
+/** Auth tag 長度（位元組） */
+const AUTH_TAG_LENGTH = 16;
+
+/** 取得加密密鑰：優先從環境變數，退回 JWT secret */
+function getEncryptionKey(): Buffer {
+	const envKey = process.env['API_KEY_ENCRYPTION_KEY'];
+	if (envKey) {
+		// 將字串雜湊為 32 位元組密鑰
+		return crypto.createHash('sha256').update(envKey).digest();
+	}
+	// 退回使用 JWT secret
+	const secretPath = path.join(userDir, JWT_SECRET_FILE_NAME);
+	try {
+		const jwtSecret = fs.readFileSync(secretPath, 'utf-8').trim();
+		return crypto.createHash('sha256').update(jwtSecret).digest();
+	} catch {
+		// 若 JWT secret 也不存在，使用固定種子（不應發生於正常流程）
+		return crypto.createHash('sha256').update('pixel-agents-default-key').digest();
+	}
+}
+
+/** 加密 API Key — 回傳格式 enc:iv:authTag:ciphertext（全為 hex） */
+function encryptApiKey(plaintext: string): string {
+	const key = getEncryptionKey();
+	const iv = crypto.randomBytes(IV_LENGTH);
+	const cipher = crypto.createCipheriv(CIPHER_ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
+	const encrypted = Buffer.concat([cipher.update(plaintext, 'utf-8'), cipher.final()]);
+	const authTag = cipher.getAuthTag();
+	return `enc:${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
+}
+
+/** 解密 API Key — 接受 enc:iv:authTag:ciphertext 格式 */
+function decryptApiKey(encrypted: string): string {
+	if (!encrypted.startsWith('enc:')) {
+		// 未加密的舊格式 — 直接回傳明文
+		return encrypted;
+	}
+	const parts = encrypted.split(':');
+	if (parts.length !== 4) {
+		throw new Error('Invalid encrypted API key format');
+	}
+	const key = getEncryptionKey();
+	const iv = Buffer.from(parts[1], 'hex');
+	const authTag = Buffer.from(parts[2], 'hex');
+	const ciphertext = Buffer.from(parts[3], 'hex');
+	const decipher = crypto.createDecipheriv(CIPHER_ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
+	decipher.setAuthTag(authTag);
+	const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+	return decrypted.toString('utf-8');
+}
+
+// ── 記憶體快取：明文 API Key → userId（用於快速查找） ──────────
+const apiKeyCache = new Map<string, string>();
+let apiKeyCacheInitialized = false;
+
+/** 初始化 API Key 快取（延遲載入） */
+function ensureApiKeyCache(): void {
+	if (apiKeyCacheInitialized) return;
+	apiKeyCacheInitialized = true;
+	try {
+		if (db) {
+			const rows = db.listUsers();
+			for (const row of rows) {
+				if (row.api_key) {
+					try {
+						const plain = decryptApiKey(row.api_key);
+						apiKeyCache.set(plain, row.id);
+					} catch { /* 解密失敗跳過 */ }
+				}
+			}
+		} else {
+			const data = readUsersDataFromJson();
+			for (const user of data.users) {
+				if (user.apiKey) {
+					try {
+						const plain = decryptApiKey(user.apiKey);
+						apiKeyCache.set(plain, user.id);
+					} catch { /* 解密失敗跳過 */ }
+				}
+			}
+		}
+	} catch { /* 初始化失敗不中斷 */ }
+}
+
+/** 更新快取中的 API Key 映射 */
+function updateApiKeyCache(plainKey: string, userId: string): void {
+	ensureApiKeyCache();
+	apiKeyCache.set(plainKey, userId);
+}
+
+/** 從快取中移除舊的 API Key */
+function removeApiKeyCacheByUserId(userId: string): void {
+	ensureApiKeyCache();
+	for (const [key, id] of apiKeyCache) {
+		if (id === userId) {
+			apiKeyCache.delete(key);
+			break;
+		}
+	}
+}
 
 export interface StoredUser {
 	id: string;
@@ -48,16 +155,24 @@ export function generateApiKey(): string {
 	return result;
 }
 
-/** 讀取時自動補全缺失欄位（向下相容舊格式） */
+/** 讀取時自動補全缺失欄位（向下相容舊格式）— apiKey 解密後回傳 */
 function migrateUser(user: StoredUser): StoredUser {
 	// viewer 角色自動遷移為 member
 	const role = user.role === ('viewer' as string) ? 'member' : (user.role ?? 'admin');
+	let apiKey = user.apiKey;
+	if (!apiKey) {
+		apiKey = generateApiKey();
+	} else {
+		// 嘗試解密（若已加密）
+		try {
+			apiKey = decryptApiKey(apiKey);
+		} catch { /* 解密失敗保持原值 */ }
+	}
 	return {
 		...user,
 		role,
 		mustChangePassword: user.mustChangePassword ?? false,
-		// 若無 apiKey 則自動生成
-		apiKey: user.apiKey || generateApiKey(),
+		apiKey,
 	};
 }
 
@@ -81,10 +196,23 @@ function generateId(): string {
 	return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-/** 將 DB UserRow 轉換為 StoredUser */
+/** 將 DB UserRow 轉換為 StoredUser — apiKey 解密後回傳 */
 function dbRowToStoredUser(row: { id: string; username: string; password_hash: string; role: string; must_change_password: number; created_at: string; api_key?: string | null }): StoredUser {
 	// viewer 角色自動遷移為 member
 	const role = row.role === 'viewer' ? 'member' : row.role;
+	let apiKey = row.api_key || '';
+	if (!apiKey) {
+		// 無 API Key 時自動生成並加密儲存
+		apiKey = generateApiKey();
+		const encrypted = encryptApiKey(apiKey);
+		try { db?.updateApiKey(row.id, encrypted); } catch { /* 寫入失敗不中斷 */ }
+		updateApiKeyCache(apiKey, row.id);
+	} else {
+		// 嘗試解密
+		try {
+			apiKey = decryptApiKey(apiKey);
+		} catch { /* 解密失敗保持原值（可能是舊的明文格式） */ }
+	}
 	return {
 		id: row.id,
 		username: row.username,
@@ -92,7 +220,7 @@ function dbRowToStoredUser(row: { id: string; username: string; password_hash: s
 		createdAt: row.created_at,
 		role: role as 'admin' | 'member',
 		mustChangePassword: row.must_change_password === 1,
-		apiKey: row.api_key || generateApiKey(),
+		apiKey,
 	};
 }
 
@@ -102,6 +230,7 @@ export async function createUser(
 	options?: { mustChangePassword?: boolean; role?: 'admin' | 'member' },
 ): Promise<StoredUser> {
 	const apiKey = generateApiKey();
+	const encryptedApiKey = encryptApiKey(apiKey);
 
 	if (db) {
 		const existing = db.getUserByUsername(username);
@@ -112,9 +241,18 @@ export async function createUser(
 		const id = generateId();
 		const role = options?.role ?? 'admin';
 		const mustChangePassword = options?.mustChangePassword ?? false;
-		db.createUser({ id, username, passwordHash, role, mustChangePassword, apiKey });
+		// 儲存加密後的 API Key
+		db.createUser({ id, username, passwordHash, role, mustChangePassword, apiKey: encryptedApiKey });
+		// 更新記憶體快取
+		updateApiKeyCache(apiKey, id);
 		const row = db.getUserByUsername(username);
-		return row ? dbRowToStoredUser(row) : {
+		if (row) {
+			const user = dbRowToStoredUser(row);
+			// 回傳明文 API Key（供首次顯示）
+			user.apiKey = apiKey;
+			return user;
+		}
+		return {
 			id, username, passwordHash,
 			createdAt: new Date().toISOString(),
 			mustChangePassword, role, apiKey,
@@ -134,11 +272,14 @@ export async function createUser(
 		createdAt: new Date().toISOString(),
 		mustChangePassword: options?.mustChangePassword ?? false,
 		role: options?.role ?? 'admin',
-		apiKey,
+		apiKey: encryptedApiKey,
 	};
 	data.users.push(user);
 	writeUsersData(data);
-	return user;
+	// 更新記憶體快取
+	updateApiKeyCache(apiKey, user.id);
+	// 回傳明文 API Key（供首次顯示）
+	return { ...user, apiKey };
 }
 
 export async function verifyUser(username: string, password: string): Promise<StoredUser | null> {
@@ -158,15 +299,58 @@ export async function verifyUser(username: string, password: string): Promise<St
 	return valid ? user : null;
 }
 
-/** 透過 API Key 驗證使用者 */
+/** 透過 API Key 驗證使用者 — 使用記憶體快取進行快速查找 */
 export function verifyApiKey(apiKey: string): StoredUser | null {
-	if (db) {
-		const row = db.getUserByApiKey(apiKey);
-		if (!row) return null;
-		return dbRowToStoredUser(row);
+	ensureApiKeyCache();
+
+	// 先從快取查找明文 API Key → userId
+	const userId = apiKeyCache.get(apiKey);
+	if (userId) {
+		const user = getUserById(userId);
+		if (user) {
+			// 解密回傳明文
+			try {
+				user.apiKey = decryptApiKey(user.apiKey);
+			} catch { /* 解密失敗保持原值 */ }
+			return user;
+		}
 	}
+
+	// 快取未命中 — 遍歷所有使用者嘗試解密比對（相容舊格式遷移情境）
+	if (db) {
+		const rows = db.listUsers();
+		for (const row of rows) {
+			if (!row.api_key) continue;
+			try {
+				const plain = decryptApiKey(row.api_key);
+				if (plain === apiKey) {
+					// 更新快取
+					updateApiKeyCache(plain, row.id);
+					// 透過 getUserById 取得完整的 StoredUser
+					const fullRow = db.getUserById(row.id);
+					if (fullRow) {
+						const user = dbRowToStoredUser(fullRow);
+						user.apiKey = plain;
+						return user;
+					}
+					return null;
+				}
+			} catch { /* 解密失敗跳過 */ }
+		}
+		return null;
+	}
+
 	const data = readUsersDataFromJson();
-	return data.users.find(u => u.apiKey === apiKey) || null;
+	for (const u of data.users) {
+		try {
+			const plain = decryptApiKey(u.apiKey);
+			if (plain === apiKey) {
+				updateApiKeyCache(plain, u.id);
+				return { ...u, apiKey: plain };
+			}
+		} catch { /* 解密失敗跳過 */ }
+	}
+	return null;
 }
 
 export function getUserByUsername(username: string): StoredUser | null {
@@ -237,19 +421,23 @@ export function updateUserRole(id: string, role: 'admin' | 'member'): void {
 	writeUsersData(data);
 }
 
-/** 重新生成使用者的 API Key，回傳新 key */
+/** 重新生成使用者的 API Key，回傳新的明文 key */
 export function regenerateApiKey(userId: string): string {
 	const newKey = generateApiKey();
+	const encryptedKey = encryptApiKey(newKey);
+	// 移除舊的快取條目並新增新的
+	removeApiKeyCacheByUserId(userId);
+	updateApiKeyCache(newKey, userId);
 	if (db) {
 		const row = db.getUserById(userId);
 		if (!row) throw new Error('User not found');
-		db.updateApiKey(userId, newKey);
+		db.updateApiKey(userId, encryptedKey);
 		return newKey;
 	}
 	const data = readUsersDataFromJson();
 	const user = data.users.find(u => u.id === userId);
 	if (!user) throw new Error('User not found');
-	user.apiKey = newKey;
+	user.apiKey = encryptedKey;
 	writeUsersData(data);
 	return newKey;
 }
@@ -269,31 +457,41 @@ export function deleteUser(id: string): void {
 	writeUsersData(data);
 }
 
-/** 列出所有使用者（不含密碼雜湊） */
+/** 列出所有使用者（不含密碼雜湊）— apiKey 解密後回傳 */
 export function listUsers(): PublicUser[] {
 	if (db) {
 		return db.listUsers().map(u => {
 			// viewer 角色自動遷移為 member
 			const role = u.role === 'viewer' ? 'member' : u.role;
+			let apiKey = u.api_key || '';
+			if (!apiKey) {
+				apiKey = generateApiKey();
+			} else {
+				try { apiKey = decryptApiKey(apiKey); } catch { /* 保持原值 */ }
+			}
 			return {
 				id: u.id,
 				username: u.username,
 				role: role as 'admin' | 'member',
 				createdAt: u.created_at,
 				mustChangePassword: u.must_change_password === 1,
-				apiKey: u.api_key || generateApiKey(),
+				apiKey,
 			};
 		});
 	}
 	const data = readUsersDataFromJson();
-	return data.users.map(u => ({
-		id: u.id,
-		username: u.username,
-		role: u.role ?? 'admin',
-		createdAt: u.createdAt,
-		mustChangePassword: u.mustChangePassword ?? false,
-		apiKey: u.apiKey,
-	}));
+	return data.users.map(u => {
+		let apiKey = u.apiKey;
+		try { apiKey = decryptApiKey(apiKey); } catch { /* 保持原值 */ }
+		return {
+			id: u.id,
+			username: u.username,
+			role: u.role ?? 'admin',
+			createdAt: u.createdAt,
+			mustChangePassword: u.mustChangePassword ?? false,
+			apiKey,
+		};
+	});
 }
 
 /** 首次啟動時若無使用者，建立預設 admin 帳號（標記須變更密碼） */

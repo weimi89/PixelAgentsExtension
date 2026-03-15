@@ -379,6 +379,40 @@ async function main(): Promise<void> {
 	// JSON body 解析（API 路由需要）
 	app.use(express.json());
 
+	// ── CSP 安全標頭 ─────────────────────────────────────────────
+	const isProduction = config.nodeEnv === 'production';
+	app.use((_req, res, nextMiddleware) => {
+		if (isProduction) {
+			// 正式環境：嚴格 CSP
+			res.setHeader('Content-Security-Policy', [
+				"default-src 'self'",
+				"script-src 'self'",
+				"style-src 'self' 'unsafe-inline'",  // 像素字型需要 inline style
+				"connect-src 'self' ws: wss:",         // Socket.IO WebSocket
+				"img-src 'self' data: blob:",           // canvas 匯出、data URL
+				"font-src 'self'",
+				"object-src 'none'",
+				"base-uri 'self'",
+				"form-action 'self'",
+			].join('; '));
+		} else {
+			// 開發模式：放寬限制（Vite HMR 需要 eval 和 localhost 連線）
+			res.setHeader('Content-Security-Policy', [
+				"default-src 'self'",
+				"script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+				"style-src 'self' 'unsafe-inline'",
+				"connect-src 'self' ws: wss: http://localhost:* http://127.0.0.1:*",
+				"img-src 'self' data: blob:",
+				"font-src 'self'",
+			].join('; '));
+		}
+		// 其他安全標頭
+		res.setHeader('X-Content-Type-Options', 'nosniff');
+		res.setHeader('X-Frame-Options', 'DENY');
+		res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+		nextMiddleware();
+	});
+
 	// ── 速率限制 ────────────────────────────────────────────────
 	const apiRateLimit = createRateLimit({
 		windowMs: RATE_LIMIT_API_WINDOW_MS,
