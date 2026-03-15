@@ -424,6 +424,7 @@ function handleAgentNodeEvent(
 				floorId,
 				isRemote: true,
 				owner: username,
+				ownerId: socket.data.user.userId,
 				remoteSessionId: event.sessionId,
 				gitBranch: null,
 				statusHistory: [],
@@ -449,6 +450,7 @@ function handleAgentNodeEvent(
 				startedAt: agent.startedAt,
 				isRemote: true,
 				owner: username,
+				ownerId: socket.data.user.userId,
 			});
 			ctx.broadcastFloorSummaries();
 

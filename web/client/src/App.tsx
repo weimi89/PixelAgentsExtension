@@ -37,7 +37,7 @@ import { AchievementToast } from './components/AchievementToast.js'
 import { TeamPanel } from './components/TeamPanel.js'
 import { LayoutSharePanel } from './components/LayoutSharePanel.js'
 import { AuthPanel } from './components/AuthPanel.js'
-import { AuthProvider } from './hooks/useAuth.js'
+import { AuthProvider, useAuth } from './hooks/useAuth.js'
 import { useTheme } from './hooks/useTheme.js'
 import { t } from './i18n.js'
 
@@ -154,6 +154,7 @@ function App() {
   const { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, projectDirs, currentFloorId, building, floorSummaries, chatMessages, agentGitBranches, agentStatusHistory, agentTeams, agentCliTypes, lanPeers, agentGrowthData, agentStartTimes, nodeHealthNodes, pendingAchievementToasts, dismissAchievementToast } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty, editor.handleZoomChange, display.handleUiScaleLoaded)
 
   const { theme, toggleTheme } = useTheme()
+  const auth = useAuth()
 
   const connected = useConnectionState()
 
@@ -450,13 +451,14 @@ function App() {
       {!panels.isDashboardView && <ChatPanel messages={chatMessages} />}
 
       {!panels.isDashboardView && interaction.detailPanelAgentId != null && agents.includes(interaction.detailPanelAgentId) && (() => {
-        // 組合代理資訊供面板使用
-        const agentInfoMap: Record<number, { projectName?: string; isRemote?: boolean; owner?: string }> = {}
+        // 組合代理資訊供面板使用（P3.4: 包含 ownerId）
+        const agentInfoMap: Record<number, { projectName?: string; isRemote?: boolean; owner?: string; ownerId?: string }> = {}
         for (const id of agents) {
           agentInfoMap[id] = {
             projectName: agentProjects[id],
             isRemote: !!remoteAgents[id],
             owner: remoteAgents[id]?.owner,
+            ownerId: remoteAgents[id]?.ownerId,
           }
         }
         return (
@@ -475,6 +477,8 @@ function App() {
             agentStartTimes={agentStartTimes}
             onClose={interaction.handleCloseDetailPanel}
             onCloseAgent={interaction.handleCloseAgent}
+            authRole={auth.role}
+            authUserId={auth.userId}
           />
         )
       })()}

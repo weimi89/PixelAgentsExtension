@@ -52,6 +52,8 @@ export interface AgentState {
 	isRemote: boolean;
 	/** 遠端代理的擁有者使用者名稱 */
 	owner: string | null;
+	/** 代理所有者的使用者 ID（統一本地/遠端代理的所有權） */
+	ownerId: string | null;
 	/** 遠端代理的來源 sessionId（用於 Agent Node 事件對應） */
 	remoteSessionId: string | null;
 	/** 從 JSONL 偵測到的 git 分支名稱 */
@@ -88,6 +90,8 @@ export interface PersistedAgent {
 	tmuxSessionName?: string;
 	floorId?: FloorId;
 	cliType?: string;
+	/** 代理所有者的使用者 ID */
+	ownerId?: string;
 	/** 成長系統持久化欄位 */
 	xp?: number;
 	toolCallCount?: number;
@@ -133,7 +137,8 @@ export type ClientMessage =
 	| { type: 'requestBehaviorSettings' }
 	| { type: 'requestLayoutTemplates' }
 	| { type: 'loadLayoutTemplate'; templateId: string; floorId?: FloorId }
-	| { type: 'requestNodeHealth' };
+	| { type: 'requestNodeHealth' }
+	| { type: 'assignAgentOwner'; agentId: number; userId: string };
 
 /** 代理上下文 — 集中管理所有共享狀態與計時器，避免函式傳遞大量參數 */
 export interface AgentContext {

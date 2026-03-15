@@ -116,6 +116,7 @@ router.post('/register', async (req, res) => {
 		res.json({
 			token, accessToken, refreshToken,
 			username: user.username,
+			userId: user.id,
 			role: user.role ?? 'admin',
 			apiKey: user.apiKey,
 		});
@@ -146,6 +147,7 @@ router.post('/login', async (req, res) => {
 				accessToken,
 				refreshToken,
 				username: user.username,
+				userId: user.id,
 				role: user.role ?? 'admin',
 				mustChangePassword: user.mustChangePassword ?? false,
 			});
@@ -172,6 +174,7 @@ router.post('/login', async (req, res) => {
 			accessToken,
 			refreshToken,
 			username: user.username,
+			userId: user.id,
 			role: user.role ?? 'admin',
 			mustChangePassword: user.mustChangePassword ?? false,
 		});

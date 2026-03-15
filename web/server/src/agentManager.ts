@@ -147,6 +147,7 @@ export function savePersistedAgents(agents: Map<number, AgentState>): void {
 			tmuxSessionName: agent.tmuxSessionName ?? undefined,
 			floorId: agent.floorId,
 			...(agent.cliType !== 'claude' ? { cliType: agent.cliType } : {}),
+			...(agent.ownerId ? { ownerId: agent.ownerId } : {}),
 			...(g.xp > 0 ? { xp: g.xp, toolCallCount: g.toolCallCount, sessionCount: g.sessionCount, bashCallCount: g.bashCallCount, achievements: g.achievements } : {}),
 		});
 
@@ -232,6 +233,7 @@ function createAgentState(
 		floorId,
 		isRemote: false,
 		owner: null,
+		ownerId: null,
 		remoteSessionId: null,
 		gitBranch: null,
 		statusHistory: [],
@@ -520,9 +522,12 @@ export function recoverTmuxAgents(
 		const cliType = match?.cliType || detectCliTypeFromPath(projectDir);
 		const id = nextAgentIdRef.current++;
 		const agent = createAgentState(id, jsonlFile, projectDir, sessionName, false, floorId, cliType);
-		// 從持久化資料還原成長狀態
+		// 從持久化資料還原成長狀態和所有權
 		if (match) {
 			agent.growth = restoreGrowth(match);
+			if (match.ownerId) {
+				agent.ownerId = match.ownerId;
+			}
 		}
 		// 從頭讀取以重建狀態
 		agent.fileOffset = 0;
@@ -598,7 +603,7 @@ export function sendExistingAgents(
 	agentIds.sort((a, b) => a - b);
 
 	// 為每個代理補充專案資訊
-	const enrichedMeta: Record<string, { palette?: number; hueShift?: number; seatId?: string; isExternal?: boolean; projectName?: string; floorId?: string; isRemote?: boolean; owner?: string; cliType?: string; startedAt?: number }> = {};
+	const enrichedMeta: Record<string, { palette?: number; hueShift?: number; seatId?: string; isExternal?: boolean; projectName?: string; floorId?: string; isRemote?: boolean; owner?: string; ownerId?: string; cliType?: string; startedAt?: number }> = {};
 	for (const [idStr, meta] of Object.entries(agentMeta)) {
 		enrichedMeta[idStr] = { ...meta };
 	}
@@ -622,6 +627,9 @@ export function sendExistingAgents(
 			if (agent.owner) {
 				enrichedMeta[key].owner = agent.owner;
 			}
+		}
+		if (agent.ownerId) {
+			enrichedMeta[key].ownerId = agent.ownerId;
 		}
 	}
 

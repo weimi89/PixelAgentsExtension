@@ -59,8 +59,8 @@ export interface ExtensionMessageState {
   loadedAssets?: { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> }
   /** agentId → projectName，僅外部專案代理有條目 */
   agentProjects: Record<number, string>
-  /** agentId → { owner }，僅遠端代理有條目 */
-  remoteAgents: Record<number, { owner: string }>
+  /** agentId → { owner, ownerId }，僅遠端代理或有所有者的代理有條目 */
+  remoteAgents: Record<number, { owner: string; ownerId?: string }>
   /** agentId → 轉錄記錄陣列 */
   agentTranscripts: Record<number, TranscriptEntry[]>
   /** 被排除的專案目錄 basename 清單 */
@@ -192,8 +192,11 @@ function handleAgentCreated(msg: ServerMessage & { type: 'agentCreated' }, ctx: 
     ctx.setAgentCliTypes((prev) => ({ ...prev, [id]: msg.cliType! }))
   }
   if (msg.isRemote && msg.owner) {
-    ctx.setRemoteAgents((prev) => ({ ...prev, [id]: { owner: msg.owner! } }))
+    ctx.setRemoteAgents((prev) => ({ ...prev, [id]: { owner: msg.owner!, ownerId: msg.ownerId } }))
     ctx.os.setAgentRemote(id, true)
+  } else if (msg.ownerId) {
+    // P3.4: 非遠端但有 ownerId 的代理也需記錄
+    ctx.setRemoteAgents((prev) => ({ ...prev, [id]: { owner: '', ownerId: msg.ownerId } }))
   }
   if (msg.fromElevator) {
     // 從電梯位置生成（若有電梯）
@@ -233,9 +236,9 @@ function handleAgentClosed(msg: ServerMessage & { type: 'agentClosed' }, ctx: Ha
 
 function handleExistingAgents(msg: ServerMessage & { type: 'existingAgents' }, ctx: HandlerContext): void {
   const incoming = msg.agents
-  const meta = msg.agentMeta || ({} as Record<number, { palette?: number; hueShift?: number; seatId?: string; isExternal?: boolean; projectName?: string; isRemote?: boolean; owner?: string; cliType?: string; startedAt?: number }>)
+  const meta = msg.agentMeta || ({} as Record<number, { palette?: number; hueShift?: number; seatId?: string; isExternal?: boolean; projectName?: string; isRemote?: boolean; owner?: string; ownerId?: string; cliType?: string; startedAt?: number }>)
   const newProjects: Record<number, string> = {}
-  const newRemote: Record<number, { owner: string }> = {}
+  const newRemote: Record<number, { owner: string; ownerId?: string }> = {}
   const newCliTypes: Record<number, string> = {}
   const newStartTimes: Record<number, number> = {}
   for (const id of incoming) {
@@ -250,8 +253,11 @@ function handleExistingAgents(msg: ServerMessage & { type: 'existingAgents' }, c
       newStartTimes[id] = m.startedAt
     }
     if (m?.isRemote && m?.owner) {
-      newRemote[id] = { owner: m.owner }
+      newRemote[id] = { owner: m.owner, ownerId: m.ownerId }
       ctx.os.setAgentRemote(id, true)
+    } else if (m?.ownerId) {
+      // P3.4: 非遠端但有 ownerId 的代理也需記錄
+      newRemote[id] = { owner: '', ownerId: m.ownerId }
     }
     if (ctx.layoutReadyRef.current) {
       ctx.os.addAgent(id, m?.palette, m?.hueShift, m?.seatId, true)
@@ -613,6 +619,14 @@ function handlePermissionDenied(msg: ServerMessage & { type: 'permissionDenied' 
   console.warn(`[Webview] 權限被拒絕: action=${msg.action}, reason=${msg.reason}`)
 }
 
+/** P3.1: 代理所有者變更 */
+function handleAgentOwnerChanged(msg: ServerMessage & { type: 'agentOwnerChanged' }, ctx: HandlerContext): void {
+  ctx.setRemoteAgents((prev) => ({
+    ...prev,
+    [msg.id]: { ...prev[msg.id], owner: prev[msg.id]?.owner || '', ownerId: msg.ownerId },
+  }))
+}
+
 function handleAgentGrowth(msg: ServerMessage & { type: 'agentGrowth' }, ctx: HandlerContext): void {
   // 更新 OfficeState 中角色的等級
   const ch = ctx.os.characters.get(msg.id)
@@ -700,6 +714,7 @@ const messageHandlers: Record<string, HandlerFn> = {
   agentGrowth: handleAgentGrowth as HandlerFn,
   nodeHealth: handleNodeHealth as HandlerFn,
   permissionDenied: handlePermissionDenied as HandlerFn,
+  agentOwnerChanged: handleAgentOwnerChanged as HandlerFn,
 }
 
 // ── Hook ────────────────────────────────────────────────────────
@@ -721,7 +736,7 @@ export function useExtensionMessages(
   const [layoutReady, setLayoutReady] = useState(false)
   const [loadedAssets, setLoadedAssets] = useState<{ catalog: FurnitureAsset[]; sprites: Record<string, string[][]> } | undefined>()
   const [agentProjects, setAgentProjects] = useState<Record<number, string>>({})
-  const [remoteAgents, setRemoteAgents] = useState<Record<number, { owner: string }>>({})
+  const [remoteAgents, setRemoteAgents] = useState<Record<number, { owner: string; ownerId?: string }>>({})
   const [agentTranscripts, setAgentTranscripts] = useState<Record<number, TranscriptEntry[]>>({})
   const [excludedProjects, setExcludedProjects] = useState<string[]>([])
   const [projectDirs, setProjectDirs] = useState<{ name: string; excluded: boolean }[]>([])

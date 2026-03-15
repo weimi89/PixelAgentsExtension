@@ -202,6 +202,7 @@ const zh_TW = {
 
   // 代理詳情面板
   agentDetail: '代理詳情',
+  loginToSeeDetails: '請登入以查看詳細資訊',
   agentDetailInfo: '基本資訊',
   agentDetailTools: '工具活動',
   agentDetailHistory: '狀態歷史',
@@ -613,6 +614,7 @@ const en_US: LocaleStrings = {
 
   // Agent detail panel
   agentDetail: 'Agent Details',
+  loginToSeeDetails: 'Please login to see details',
   agentDetailInfo: 'Basic Info',
   agentDetailTools: 'Tool Activity',
   agentDetailHistory: 'Status History',

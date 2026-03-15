@@ -9,6 +9,8 @@ export type AuthRole = 'admin' | 'member' | 'anonymous'
 interface AuthState {
   role: AuthRole
   username: string | null
+  /** P3.4: 使用者 ID（用於代理所有權比較） */
+  userId: string | null
   token: string | null
   isAuthenticated: boolean
 }
@@ -35,12 +37,14 @@ interface AuthContextValue extends AuthState {
 const TOKEN_KEY = 'pixel-agents-token'
 const USERNAME_KEY = 'pixel-agents-username'
 const ROLE_KEY = 'pixel-agents-role'
+const USERID_KEY = 'pixel-agents-userid'
 
 // ── Context ──────────────────────────────────────────────────────
 
 const defaultContextValue: AuthContextValue = {
   role: 'anonymous',
   username: null,
+  userId: null,
   token: null,
   isAuthenticated: false,
   login: async () => ({ success: false }),
@@ -57,23 +61,25 @@ const AuthContext = createContext<AuthContextValue>(defaultContextValue)
 // ── 工具函式 ─────────────────────────────────────────────────────
 
 /** 從 localStorage 恢復已儲存的認證狀態 */
-function loadStoredAuth(): { token: string | null; username: string | null; role: AuthRole } {
+function loadStoredAuth(): { token: string | null; username: string | null; userId: string | null; role: AuthRole } {
   try {
     const token = localStorage.getItem(TOKEN_KEY)
     const username = localStorage.getItem(USERNAME_KEY)
+    const userId = localStorage.getItem(USERID_KEY)
     const role = (localStorage.getItem(ROLE_KEY) as AuthRole) || 'anonymous'
-    return { token, username, role: token ? role : 'anonymous' }
+    return { token, username, userId, role: token ? role : 'anonymous' }
   } catch {
-    return { token: null, username: null, role: 'anonymous' }
+    return { token: null, username: null, userId: null, role: 'anonymous' }
   }
 }
 
 /** 儲存認證資訊至 localStorage */
-function saveAuth(token: string, username: string, role: AuthRole): void {
+function saveAuth(token: string, username: string, role: AuthRole, userId?: string): void {
   try {
     localStorage.setItem(TOKEN_KEY, token)
     localStorage.setItem(USERNAME_KEY, username)
     localStorage.setItem(ROLE_KEY, role)
+    if (userId) localStorage.setItem(USERID_KEY, userId)
   } catch { /* 忽略 localStorage 不可用的情況 */ }
 }
 
@@ -83,6 +89,7 @@ function clearAuth(): void {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USERNAME_KEY)
     localStorage.removeItem(ROLE_KEY)
+    localStorage.removeItem(USERID_KEY)
   } catch { /* 忽略 */ }
 }
 
@@ -92,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const stored = loadStoredAuth()
   const [role, setRole] = useState<AuthRole>(stored.role)
   const [username, setUsername] = useState<string | null>(stored.username)
+  const [userId, setUserId] = useState<string | null>(stored.userId)
   const [token, setToken] = useState<string | null>(stored.token)
 
   const tokenRef = useRef(token)
@@ -107,12 +115,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 監聽伺服器推送的認證狀態訊息
   useEffect(() => {
     const unsub = onServerMessage((data: unknown) => {
-      const msg = data as { type: string; role?: string; username?: string; error?: string }
+      const msg = data as { type: string; role?: string; username?: string; userId?: string; error?: string }
       if (msg.type === 'auth:status') {
-        // 伺服器回報目前身份（連線時推送）
+        // 伺服器回報目前身份（連線時推送，P3.4 包含 userId）
         const serverRole = (msg.role as AuthRole) || 'anonymous'
         setRole(serverRole)
         if (msg.username) setUsername(msg.username)
+        if (msg.userId) setUserId(msg.userId)
         // 若本地有 token 但伺服器回報為 anonymous，嘗試升級
         if (serverRole === 'anonymous' && tokenRef.current) {
           emitRaw('auth:upgrade', { token: tokenRef.current })
@@ -122,12 +131,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const newRole = (msg.role as AuthRole) || 'member'
         setRole(newRole)
         if (msg.username) setUsername(msg.username)
+        if (msg.userId) setUserId(msg.userId)
       } else if (msg.type === 'auth:error') {
         // 認證失敗 — 清除本地 token
         console.warn('[Auth] 認證錯誤:', msg.error)
         clearAuth()
         setToken(null)
         setUsername(null)
+        setUserId(null)
         setRole('anonymous')
         setAuthToken(null)
       }
@@ -136,11 +147,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /** 處理登入/註冊成功後的共通邏輯 */
-  const handleAuthSuccess = useCallback((responseToken: string, responseUsername: string, responseRole: AuthRole) => {
-    saveAuth(responseToken, responseUsername, responseRole)
+  const handleAuthSuccess = useCallback((responseToken: string, responseUsername: string, responseRole: AuthRole, responseUserId?: string) => {
+    saveAuth(responseToken, responseUsername, responseRole, responseUserId)
     setToken(responseToken)
     setUsername(responseUsername)
     setRole(responseRole)
+    if (responseUserId) setUserId(responseUserId)
     setAuthToken(responseToken)
     // 通知伺服器升級此 socket 的身份
     emitRaw('auth:upgrade', { token: responseToken })
@@ -157,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!res.ok) {
         return { success: false, error: data.error || '登入失敗' }
       }
-      handleAuthSuccess(data.token, data.username, data.role || 'member')
+      handleAuthSuccess(data.token, data.username, data.role || 'member', data.userId)
       return {
         success: true,
         mustChangePassword: data.mustChangePassword,
@@ -179,7 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!res.ok) {
         return { success: false, error: data.error || '登入失敗' }
       }
-      handleAuthSuccess(data.token, data.username, data.role || 'member')
+      handleAuthSuccess(data.token, data.username, data.role || 'member', data.userId)
       return { success: true }
     } catch {
       return { success: false, error: '網路錯誤' }
@@ -197,7 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!res.ok) {
         return { success: false, error: data.error || '註冊失敗' }
       }
-      handleAuthSuccess(data.token, data.username, data.role || 'member')
+      handleAuthSuccess(data.token, data.username, data.role || 'member', data.userId)
       return { success: true, apiKey: data.apiKey }
     } catch {
       return { success: false, error: '網路錯誤' }
@@ -208,6 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearAuth()
     setToken(null)
     setUsername(null)
+    setUserId(null)
     setRole('anonymous')
     setAuthToken(null)
     // 重新連線以回到匿名狀態
@@ -278,6 +291,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextValue = {
     role,
     username,
+    userId,
     token,
     isAuthenticated,
     login,

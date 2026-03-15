@@ -389,6 +389,7 @@ export class ClusterManager {
 			floorId: info.floorId,
 			isRemote: true,
 			owner: info.owner,
+			ownerId: null,
 			remoteSessionId: null,
 			gitBranch: null,
 			statusHistory: [],

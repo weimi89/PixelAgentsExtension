@@ -404,6 +404,7 @@ function scanAndAdopt(
 			floorId,
 			isRemote: false,
 			owner: null,
+			ownerId: null,
 			remoteSessionId: null,
 			gitBranch: null,
 			statusHistory: [],

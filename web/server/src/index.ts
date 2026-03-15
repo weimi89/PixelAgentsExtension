@@ -47,7 +47,7 @@ import { sendTmuxKeys } from './tmuxManager.js';
 import { cancelPermissionTimer } from './timerManager.js';
 import { initAuthRoutes, setOnBuildingChanged } from './auth/routes.js';
 import { socketAuthMiddleware, handleAuthUpgrade } from './auth/socketAuth.js';
-import { SENSITIVE_MESSAGE_TYPES, shouldSendMessage } from './auth/messageFilter.js';
+import { SENSITIVE_MESSAGE_TYPES, shouldSendAgentMessage } from './auth/messageFilter.js';
 import { setupAgentNodeNamespace, getConnectedNodes, syncExcludedProjectsToNodes, startRemoteTerminalRelay, sendRemoteTerminalInput, sendRemoteTerminalResize, detachRemoteTerminal, forwardResumeSessionToNode } from './agentNodeHandler.js';
 import { cluster } from './cluster.js';
 import { loadDashboardStats, getDashboardStats, flushDashboardStats, startStatsFlushTimer, stopStatsFlushTimer } from './dashboardStats.js';
@@ -470,7 +470,7 @@ async function main(): Promise<void> {
 	}, NODE_HEALTH_BROADCAST_INTERVAL_MS);
 
 	// 全域廣播 sender — 用於需要送達所有客戶端的訊息（如 projectNameUpdated）
-	// 敏感訊息會依角色過濾，僅發送給 admin/member
+	// P3.3: 敏感訊息依角色+代理所有權過濾
 	ctx.sender = {
 		postMessage(msg: unknown) {
 			const msgObj = msg as Record<string, unknown>;
@@ -480,9 +480,21 @@ async function main(): Promise<void> {
 				io.emit('message', msg);
 				return;
 			}
-			// 敏感訊息 → 逐 socket 檢查角色
+			// P3.3: 敏感訊息 → 從訊息中提取 agentId，查找代理的 ownerId
+			const agentId = (msgObj.id ?? msgObj.agentId) as number | undefined;
+			let agentOwnerId: string | null | undefined;
+			if (agentId != null) {
+				const agent = ctx.agents.get(agentId);
+				agentOwnerId = agent?.ownerId;
+			}
+			// 逐 socket 檢查角色+所有權
 			for (const [, s] of io.sockets.sockets) {
-				if (shouldSendMessage(s.data.role || 'anonymous', msgType)) {
+				if (shouldSendAgentMessage(
+					s.data.role || 'anonymous',
+					s.data.userId,
+					msgType,
+					agentOwnerId,
+				)) {
 					s.emit('message', msg);
 				}
 			}
@@ -499,7 +511,7 @@ async function main(): Promise<void> {
 	});
 
 	// 樓層 sender — 僅廣播至特定樓層的客戶端
-	// 敏感訊息會依角色過濾，僅發送給 admin/member
+	// P3.3: 敏感訊息依角色+代理所有權過濾（member 只收自己代理的敏感訊息）
 	ctx.floorSender = (floorId: FloorId) => ({
 		postMessage(msg: unknown) {
 			const msgObj = msg as Record<string, unknown>;
@@ -510,12 +522,24 @@ async function main(): Promise<void> {
 				io.to(room).emit('message', msg);
 				return;
 			}
-			// 敏感訊息 → 只發給 admin/member（逐 socket 檢查）
+			// P3.3: 敏感訊息 → 從訊息中提取 agentId，查找代理的 ownerId
+			const agentId = (msgObj.id ?? msgObj.agentId) as number | undefined;
+			let agentOwnerId: string | null | undefined;
+			if (agentId != null) {
+				const agent = ctx.agents.get(agentId);
+				agentOwnerId = agent?.ownerId;
+			}
+			// 逐 socket 檢查角色+所有權
 			const sockets = io.sockets.adapter.rooms.get(room);
 			if (!sockets) return;
 			for (const socketId of sockets) {
 				const s = io.sockets.sockets.get(socketId);
-				if (s && shouldSendMessage(s.data.role || 'anonymous', msgType)) {
+				if (s && shouldSendAgentMessage(
+					s.data.role || 'anonymous',
+					s.data.userId,
+					msgType,
+					agentOwnerId,
+				)) {
 					s.emit('message', msg);
 				}
 			}
@@ -543,11 +567,12 @@ async function main(): Promise<void> {
 	io.on('connection', (socket) => {
 		console.log(`[Pixel Agents] Client connected: ${socket.id} (role=${socket.data.role || 'anonymous'})`);
 
-		// 推送認證狀態（讓客戶端知道目前身份）
+		// 推送認證狀態（讓客戶端知道目前身份，P3.4 包含 userId）
 		socket.emit('message', {
 			type: 'auth:status',
 			role: socket.data.role || 'anonymous',
 			username: socket.data.username || null,
+			userId: socket.data.userId || null,
 		});
 
 		// 預設加入預設樓層的 room
@@ -571,7 +596,7 @@ async function main(): Promise<void> {
 		socket.on('auth:upgrade', (data: { token: string }) => {
 			const result = handleAuthUpgrade(socket, data.token);
 			if (result.success) {
-				socket.emit('message', { type: 'auth:upgraded', username: result.username, role: result.role });
+				socket.emit('message', { type: 'auth:upgraded', username: result.username, role: result.role, userId: socket.data.userId });
 				// 升級後重新推送代理詳情（重走 webviewReady 的代理部分）
 				const currentFloor = socketFloors.get(socket.id) || defaultFloor;
 				const agentMeta = readJsonFile<Record<string, { palette?: number; hueShift?: number; seatId?: string }>>(
@@ -949,6 +974,19 @@ function sendPermissionDenied(sender: MessageSender, action: string, reason: str
 	sender.postMessage({ type: 'permissionDenied', action, reason });
 }
 
+/** P3.2: 檢查使用者是否有權限操作指定代理（admin 可操作所有，member 只能操作自己的） */
+function checkAgentPermission(socket: import('socket.io').Socket | undefined, agentId: number): boolean {
+	if (!socket) return false;
+	const role = socket.data.role as string;
+	if (role === 'admin') return true;
+	if (role === 'anonymous') return false;
+	// member 只能操作自己的代理（ownerId 為 null 的代理，任何 member 都不可操作）
+	const agent = ctx.agents.get(agentId);
+	if (!agent) return false;
+	if (agent.ownerId == null) return false;
+	return agent.ownerId === socket.data.userId;
+}
+
 function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?: import('socket.io').Socket): void {
 	console.log(`[Pixel Agents] Received message: ${msg.type}`);
 	switch (msg.type) {
@@ -1044,8 +1082,8 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			break;
 		}
 		case 'closeAgent': {
-			// P2.3: 僅 admin 可關閉代理
-			if (!isAdmin(socket)) {
+			// P3.2: admin 或代理所有者可關閉代理
+			if (!checkAgentPermission(socket, msg.id)) {
 				sendPermissionDenied(sender, 'closeAgent', 'insufficient_role');
 				break;
 			}
@@ -1064,7 +1102,31 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			break;
 		}
 		case 'saveAgentSeats': {
-			writeJsonFile(getAgentSeatsPath(), msg.seats);
+			// P3.2: member 只能儲存自己代理的座位，admin 可儲存所有
+			const role = socket?.data.role as string || 'anonymous';
+			if (role === 'anonymous') {
+				sendPermissionDenied(sender, 'saveAgentSeats', 'insufficient_role');
+				break;
+			}
+			if (role === 'member') {
+				// 過濾掉非自己代理的座位
+				const userId = socket?.data.userId as string | undefined;
+				const filteredSeats: Record<string, { palette: number; hueShift: number; seatId: string | null }> = {};
+				for (const [idStr, seatData] of Object.entries(msg.seats)) {
+					const agentId = Number(idStr);
+					const agent = agents.get(agentId);
+					// 允許儲存自己的代理或無主代理的座位
+					if (agent && (agent.ownerId == null || agent.ownerId === userId)) {
+						filteredSeats[idStr] = seatData;
+					}
+				}
+				// 與現有座位合併（保留他人的座位不被覆蓋）
+				const existing = readJsonFile<Record<string, { palette: number; hueShift: number; seatId: string | null }>>(getAgentSeatsPath(), {});
+				writeJsonFile(getAgentSeatsPath(), { ...existing, ...filteredSeats });
+			} else {
+				// admin 直接儲存所有
+				writeJsonFile(getAgentSeatsPath(), msg.seats);
+			}
 			break;
 		}
 		case 'saveLayout': {
@@ -1171,6 +1233,11 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			break;
 		}
 		case 'setProjectName': {
+			// P3.2: admin 或代理所有者可設定專案名稱
+			if (!checkAgentPermission(socket, msg.agentId)) {
+				sendPermissionDenied(sender, 'setProjectName', 'insufficient_role');
+				break;
+			}
 			const agent = agents.get(msg.agentId);
 			if (!agent) break;
 			const projectDir = agent.projectDir;
@@ -1392,6 +1459,11 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			break;
 		}
 		case 'moveAgentToFloor': {
+			// P3.2: admin 或代理所有者可移動代理至其他樓層
+			if (!checkAgentPermission(socket, msg.agentId)) {
+				sendPermissionDenied(sender, 'moveAgentToFloor', 'insufficient_role');
+				break;
+			}
 			const agent = agents.get(msg.agentId);
 			if (!agent) break;
 			const targetFloor = ctx.building.floors.find((f) => f.id === msg.targetFloorId);
@@ -1420,6 +1492,11 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			break;
 		}
 		case 'requestStatusHistory': {
+			// P3.2: admin 或代理所有者可請求狀態歷史
+			if (!checkAgentPermission(socket, msg.agentId)) {
+				sendPermissionDenied(sender, 'requestStatusHistory', 'insufficient_role');
+				break;
+			}
 			const agent = agents.get(msg.agentId);
 			if (agent) {
 				sender.postMessage({
@@ -1431,6 +1508,11 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 			break;
 		}
 		case 'setAgentTeam': {
+			// P3.2: admin 或代理所有者可設定團隊
+			if (!checkAgentPermission(socket, msg.agentId)) {
+				sendPermissionDenied(sender, 'setAgentTeam', 'insufficient_role');
+				break;
+			}
 			const agent = agents.get(msg.agentId);
 			if (agent) {
 				agent.teamName = msg.teamName;
@@ -1552,6 +1634,25 @@ function handleClientMessage(msg: ClientMessage, sender: MessageSender, socket?:
 		case 'requestNodeHealth': {
 			const nodes = getConnectedNodes();
 			sender.postMessage({ type: 'nodeHealth', nodes });
+			break;
+		}
+		case 'assignAgentOwner': {
+			// P3.1: 僅 admin 可手動指派代理所有者
+			if (!isAdmin(socket)) {
+				sendPermissionDenied(sender, 'assignAgentOwner', 'insufficient_role');
+				break;
+			}
+			const targetAgent = agents.get(msg.agentId);
+			if (!targetAgent) break;
+			targetAgent.ownerId = msg.userId;
+			persistAgents();
+			logAudit('assign_agent_owner', socket?.data.userId, `agentId=${msg.agentId} ownerId=${msg.userId}`);
+			// 廣播所有權變更至同樓層客戶端
+			ctx.floorSender(targetAgent.floorId).postMessage({
+				type: 'agentOwnerChanged',
+				id: msg.agentId,
+				ownerId: msg.userId,
+			});
 			break;
 		}
 		case 'requestDashboardData': {

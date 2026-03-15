@@ -24,7 +24,8 @@ export type AuditAction =
 	| 'agent_close'
 	| 'layout_save'
 	| 'token_refresh'
-	| 'apikey_regenerate';
+	| 'apikey_regenerate'
+	| 'assign_agent_owner';
 
 interface AuditEntry {
 	timestamp: string;

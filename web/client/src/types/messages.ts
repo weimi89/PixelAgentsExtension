@@ -34,6 +34,8 @@ interface AgentMeta {
   floorId?: string
   isRemote?: boolean
   owner?: string
+  /** P3.1: 代理所有者的使用者 ID */
+  ownerId?: string
   fromElevator?: boolean
   cliType?: string
   startedAt?: number
@@ -62,7 +64,7 @@ export interface DashboardPayload {
 /** 伺服器 → 客戶端訊息的 discriminated union */
 export type ServerMessage =
   | { type: 'layoutLoaded'; layout: OfficeLayout | null }
-  | { type: 'agentCreated'; id: number; isExternal?: boolean; projectName?: string; floorId?: string; isRemote?: boolean; owner?: string; fromElevator?: boolean; cliType?: string; startedAt?: number }
+  | { type: 'agentCreated'; id: number; isExternal?: boolean; projectName?: string; floorId?: string; isRemote?: boolean; owner?: string; ownerId?: string; fromElevator?: boolean; cliType?: string; startedAt?: number }
   | { type: 'agentClosed'; id: number }
   | { type: 'existingAgents'; agents: number[]; agentMeta?: Record<number, AgentMeta> }
   | { type: 'agentToolStart'; id: number; toolId: string; status: string }
@@ -106,6 +108,7 @@ export type ServerMessage =
   | { type: 'agentGrowth'; id: number; xp: number; level: number; achievements: string[]; newAchievements: string[] }
   | { type: 'nodeHealth'; nodes: ConnectedNodeInfo[] }
   | { type: 'permissionDenied'; action: string; reason: string }
+  | { type: 'agentOwnerChanged'; id: number; ownerId: string }
 
 /** 已連線 Agent Node 的摘要資訊 */
 export interface ConnectedNodeInfo {

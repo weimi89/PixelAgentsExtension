@@ -23,7 +23,7 @@ interface TranscriptEntry {
 
 interface AgentDetailPanelProps {
   agentId: number
-  agents: Record<number, { projectName?: string; isRemote?: boolean; owner?: string }>
+  agents: Record<number, { projectName?: string; isRemote?: boolean; owner?: string; ownerId?: string }>
   agentStatuses: Record<number, string>
   agentTools: Record<number, ToolActivity[]>
   agentModels: Record<number, string>
@@ -36,6 +36,10 @@ interface AgentDetailPanelProps {
   agentStartTimes?: Record<number, number>
   onClose: () => void
   onCloseAgent?: (id: number) => void
+  /** P3.4: 當前使用者的認證角色 */
+  authRole?: string
+  /** P3.4: 當前使用者的 userId */
+  authUserId?: string | null
 }
 
 const PANEL_WIDTH = 320
@@ -211,6 +215,8 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
   agentStartTimes,
   onClose,
   onCloseAgent,
+  authRole,
+  authUserId,
 }: AgentDetailPanelProps) {
   const [visible, setVisible] = useState(false)
   const [closeHovered, setCloseHovered] = useState(false)
@@ -251,6 +257,14 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
   const team = agentTeams?.[agentId]
   const cliType = agentCliTypes?.[agentId]
   const startedAt = agentStartTimes?.[agentId]
+
+  // P3.4: 判斷是否可顯示詳細資訊（admin 或代理所有者可看）
+  const isOwnerOrAdmin = authRole === 'admin' || (
+    authRole === 'member' && (
+      agent?.ownerId == null || agent?.ownerId === authUserId
+    )
+  )
+  const isAnonymous = authRole === 'anonymous'
 
   // 即時更新工具耗時和工作時長
   const [, setTick] = useState(0)
@@ -543,8 +557,15 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
 
       </div>
 
-      {/* ---- 成長資訊 ---- */}
-      {growth && growth.level > 1 && (
+      {/* P3.4: anonymous 提示登入 */}
+      {isAnonymous && (
+        <div style={{ padding: '12px 10px', color: 'rgba(255,255,255,0.5)', fontSize: `${fs.row}px`, textAlign: 'center', borderBottom: '2px solid var(--pixel-border)' }}>
+          {t.loginToSeeDetails || '請登入以查看詳細資訊'}
+        </div>
+      )}
+
+      {/* ---- 成長資訊（P3.4: 非所有者/anonymous 不顯示） ---- */}
+      {isOwnerOrAdmin && growth && growth.level > 1 && (
         <div style={{ flexShrink: 0, borderBottom: '2px solid var(--pixel-border)', padding: isMobile ? '4px 10px' : '6px 10px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
             <span style={{ fontSize: `${isMobile ? 16 : 20}px`, color: getLevelColor(growth.level) }}>
@@ -596,13 +617,17 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
         </div>
       )}
 
-      <AchievementPanel
-        isOpen={isAchievementPanelOpen}
-        onClose={() => setIsAchievementPanelOpen(false)}
-        unlockedAchievements={growth?.achievements || []}
-      />
+      {isOwnerOrAdmin && (
+        <AchievementPanel
+          isOpen={isAchievementPanelOpen}
+          onClose={() => setIsAchievementPanelOpen(false)}
+          unlockedAchievements={growth?.achievements || []}
+        />
+      )}
 
-      {/* ---- 工具活動（固定標題 + 獨立捲動） ---- */}
+      {/* ---- 工具活動（P3.4: 僅所有者/admin 可見） ---- */}
+      {!isOwnerOrAdmin ? null : (
+      <>
       <div style={{ ...sectionHeaderStyle, fontSize: `${fs.section}px`, padding: isMobile ? '4px 10px' : sectionHeaderStyle.padding }}>
         {t.agentDetailTools}
         {tools.length > 0 && (
@@ -765,6 +790,8 @@ export const AgentDetailPanel = memo(function AgentDetailPanel({
             </div>
           </div>
         </>
+      )}
+      </>
       )}
       </div>
     </>

@@ -64,6 +64,7 @@ function createStressAgent(id: number, ctx: AgentContext): StressAgent {
 		floorId,
 		isRemote: false,
 		owner: null,
+		ownerId: null,
 		remoteSessionId: null,
 		gitBranch: null,
 		statusHistory: [],
