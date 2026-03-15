@@ -6,6 +6,7 @@ import { t } from '../i18n.js'
 import type { FloorConfig, ConnectedNodeInfo } from '../types/messages.js'
 import type { RecordingState } from '../office/engine/recorder.js'
 import type { Theme } from '../hooks/useTheme.js'
+import type { AuthRole } from '../hooks/useAuth.js'
 
 // ── 像素風格 SVG 圖示（18x18）─────────────────────────────
 const S = 18
@@ -166,6 +167,8 @@ interface BottomToolbarProps {
   // 佈局分享
   isLayoutShareOpen: boolean
   onToggleLayoutShare: () => void
+  // 認證角色（控制按鈕可見性）
+  authRole: AuthRole
   // 錄製/回放
   recorderState: RecordingState
   recordingDuration: number
@@ -242,6 +245,7 @@ export const BottomToolbar = memo(function BottomToolbar({
   onToggleTeamPanel,
   isLayoutShareOpen,
   onToggleLayoutShare,
+  authRole,
   recorderState,
   recordingDuration,
   playbackProgress,
@@ -253,6 +257,11 @@ export const BottomToolbar = memo(function BottomToolbar({
 }: BottomToolbarProps) {
   const [hovered, setHovered] = useState<string | null>(null)
   const { isMobile } = useDeviceType()
+
+  // P5 額外：依角色決定按鈕可見性
+  const isAdmin = authRole === 'admin'
+  const isMember = authRole === 'member'
+  const isLoggedIn = isAdmin || isMember
 
   // 行動版用圖示、桌面版用文字的按鈕輔助函式
   const tbBtn = (key: string, text: string, tooltip: string, icon: React.ReactNode, onClick: () => void, isActive: boolean) => (
@@ -281,12 +290,18 @@ export const BottomToolbar = memo(function BottomToolbar({
     <div role="toolbar" aria-label={t.layout} className="pixel-bottom-toolbar" style={panelStyle}>
       {tbBtn('building', t.building, t.buildingPanel, <IconBuilding />, onToggleBuildingView, isBuildingViewOpen)}
       {tbBtn('dashboard', isDashboardView ? t.officeView : t.dashboard, t.dashboard, isDashboardView ? <IconOffice /> : <IconDashboard />, onToggleDashboardView, isDashboardView)}
-      {tbBtn('sessions', t.sessions, t.browseSessions, <IconSessions />, onOpenSessionPicker, false)}
-      {tbBtn('behavior', t.behavior, t.behaviorEditor, <IconBehavior />, onToggleBehaviorEditor, isBehaviorEditorOpen)}
-      {tbBtn('templates', t.layoutTemplates, t.layoutTemplates, <IconTemplates />, onToggleTemplates, isTemplatesOpen)}
-      {tbBtn('teams', t.teams, t.allTeams, <IconTeams />, onToggleTeamPanel, isTeamPanelOpen)}
-      {tbBtn('share', t.shareLayout, t.shareLayout, <IconShare />, onToggleLayoutShare, isLayoutShareOpen)}
-      {tbBtn('edit', t.layout, t.editOfficeLayout, <IconEdit />, onToggleEditMode, isEditMode)}
+      {/* 工作階段：僅 admin 可見 */}
+      {isAdmin && tbBtn('sessions', t.sessions, t.browseSessions, <IconSessions />, onOpenSessionPicker, false)}
+      {/* 行為參數：僅 admin 可見 */}
+      {isAdmin && tbBtn('behavior', t.behavior, t.behaviorEditor, <IconBehavior />, onToggleBehaviorEditor, isBehaviorEditorOpen)}
+      {/* 空間模板：需登入 */}
+      {isLoggedIn && tbBtn('templates', t.layoutTemplates, t.layoutTemplates, <IconTemplates />, onToggleTemplates, isTemplatesOpen)}
+      {/* 團隊：需登入 */}
+      {isLoggedIn && tbBtn('teams', t.teams, t.allTeams, <IconTeams />, onToggleTeamPanel, isTeamPanelOpen)}
+      {/* 分享佈局：需登入 */}
+      {isLoggedIn && tbBtn('share', t.shareLayout, t.shareLayout, <IconShare />, onToggleLayoutShare, isLayoutShareOpen)}
+      {/* 佈局編輯：需登入 */}
+      {isLoggedIn && tbBtn('edit', t.layout, t.editOfficeLayout, <IconEdit />, onToggleEditMode, isEditMode)}
       <div style={{ position: 'relative' }}>
         {tbBtn('settings', t.settings, t.settings, <IconSettings />, onToggleSettings, isSettingsOpen)}
         <SettingsModal

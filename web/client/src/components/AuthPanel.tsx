@@ -119,6 +119,8 @@ export function AuthPanel() {
   // 顯示的 API Key
   const [displayApiKey, setDisplayApiKey] = useState<string | null>(null)
   const [apiKeyCopied, setApiKeyCopied] = useState(false)
+  // 是否顯示完整 API Key（預設遮罩）
+  const [apiKeyRevealed, setApiKeyRevealed] = useState(false)
   // 註冊後一次性顯示的 API Key
   const [registeredApiKey, setRegisteredApiKey] = useState<string | null>(null)
 
@@ -257,6 +259,7 @@ export function AuthPanel() {
     const result = await auth.getApiKey()
     if (result.success && result.apiKey) {
       setDisplayApiKey(result.apiKey)
+      setApiKeyRevealed(false)
       setView('viewApiKey')
     }
   }, [auth])
@@ -661,6 +664,11 @@ export function AuthPanel() {
   }
 
   if (view === 'viewApiKey') {
+    // 決定顯示的文字：遮罩或完整
+    const displayText = displayApiKey
+      ? (apiKeyRevealed ? displayApiKey : t.apiKeyMasked(displayApiKey))
+      : ''
+
     popoverContent = (
       <div style={{ padding: 12 }}>
         <div style={{ fontSize: '20px', color: 'var(--pixel-text)', marginBottom: 12 }}>
@@ -678,9 +686,17 @@ export function AuthPanel() {
               marginBottom: 8,
               fontFamily: 'monospace',
             }}>
-              {displayApiKey}
+              {displayText}
             </div>
             <div style={{ display: 'flex', gap: 4 }}>
+              {/* 顯示/隱藏切換按鈕 */}
+              <button
+                style={{ ...btnBase, flex: 0, fontSize: '16px' }}
+                onClick={() => setApiKeyRevealed((v) => !v)}
+              >
+                {apiKeyRevealed ? t.hideFullApiKey : t.showFullApiKey}
+              </button>
+              {/* 複製按鈕（始終複製完整 key） */}
               <button
                 style={{ ...submitBtnStyle, flex: 1, marginTop: 0 }}
                 onClick={() => handleCopyApiKey(displayApiKey)}
@@ -688,6 +704,7 @@ export function AuthPanel() {
                 {apiKeyCopied ? t.apiKeyCopied : t.copyToClipboard}
               </button>
             </div>
+            {/* 重新生成按鈕 */}
             <button
               style={{
                 ...btnBase,
@@ -716,7 +733,7 @@ export function AuthPanel() {
               padding: 0,
               textDecoration: 'underline',
             }}
-            onClick={() => { setView('menu'); setDisplayApiKey(null); setApiKeyCopied(false) }}
+            onClick={() => { setView('menu'); setDisplayApiKey(null); setApiKeyCopied(false); setApiKeyRevealed(false) }}
           >
             {t.login === '登入' ? '返回' : 'Back'}
           </button>

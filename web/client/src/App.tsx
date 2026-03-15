@@ -37,6 +37,8 @@ import { AchievementToast } from './components/AchievementToast.js'
 import { TeamPanel } from './components/TeamPanel.js'
 import { LayoutSharePanel } from './components/LayoutSharePanel.js'
 import { AuthPanel } from './components/AuthPanel.js'
+import { PermissionToast } from './components/PermissionToast.js'
+import { GuideBanner } from './components/GuideBanner.js'
 import { AuthProvider, useAuth } from './hooks/useAuth.js'
 import { useTheme } from './hooks/useTheme.js'
 import { t } from './i18n.js'
@@ -151,7 +153,7 @@ function App() {
 
   const display = useDisplaySettings()
 
-  const { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, projectDirs, currentFloorId, building, floorSummaries, chatMessages, agentGitBranches, agentStatusHistory, agentTeams, agentCliTypes, lanPeers, agentGrowthData, agentStartTimes, nodeHealthNodes, pendingAchievementToasts, dismissAchievementToast } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty, editor.handleZoomChange, display.handleUiScaleLoaded)
+  const { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, projectDirs, currentFloorId, building, floorSummaries, chatMessages, agentGitBranches, agentStatusHistory, agentTeams, agentCliTypes, lanPeers, agentGrowthData, agentStartTimes, nodeHealthNodes, pendingAchievementToasts, dismissAchievementToast, permissionToastMessage, dismissPermissionToast } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty, editor.handleZoomChange, display.handleUiScaleLoaded)
 
   const { theme, toggleTheme } = useTheme()
   const auth = useAuth()
@@ -400,6 +402,7 @@ function App() {
         onToggleTeamPanel={() => setIsTeamPanelOpen((v) => !v)}
         isLayoutShareOpen={isLayoutShareOpen}
         onToggleLayoutShare={() => setIsLayoutShareOpen((v) => !v)}
+        authRole={auth.role}
         recorderState={recorderState}
         recordingDuration={recordingDuration}
         playbackProgress={playbackProgress}
@@ -622,6 +625,17 @@ function App() {
           onDismiss={dismissAchievementToast}
         />
       )}
+
+      {/* P5.4: 權限不足友善提示 */}
+      <PermissionToast
+        message={permissionToastMessage}
+        onDismiss={dismissPermissionToast}
+      />
+
+      {/* P5.5: 新手引導提示 */}
+      <GuideBanner
+        isAuthenticated={auth.isAuthenticated}
+      />
 
       {!panels.isDashboardView && interaction.contextMenu && (() => {
         const os = getOfficeState()

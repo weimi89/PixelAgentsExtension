@@ -12,6 +12,7 @@ import { setCharacterTemplates } from '../office/sprites/spriteData.js'
 import { vscode, onServerMessage } from '../socketApi.js'
 import { playWaitingSound, playPermissionSound, playTurnCompleteSound, setSoundEnabled, setSoundConfig } from '../notificationSound.js'
 import { TEAM_COLORS } from '../constants.js'
+import { t } from '../i18n.js'
 import { setBehaviorConfig } from '../office/engine/behaviorConfig.js'
 
 /** 從 Record<number, T> 中移除指定鍵，若鍵不存在則回傳原始物件（避免不必要的重渲染） */
@@ -95,6 +96,10 @@ export interface ExtensionMessageState {
   pendingAchievementToasts: string[]
   /** 移除已顯示的成就通知 */
   dismissAchievementToast: () => void
+  /** P5.4: 權限不足 toast 訊息 */
+  permissionToastMessage: string | null
+  /** P5.4: 清除權限不足 toast */
+  dismissPermissionToast: () => void
 }
 
 /** 轉錄記錄條目 */
@@ -150,6 +155,7 @@ interface HandlerContext {
   setAgentStartTimes: React.Dispatch<React.SetStateAction<Record<number, number>>>
   setNodeHealthNodes: React.Dispatch<React.SetStateAction<ConnectedNodeInfo[]>>
   setPendingAchievementToasts: React.Dispatch<React.SetStateAction<string[]>>
+  setPermissionToastMessage: React.Dispatch<React.SetStateAction<string | null>>
 }
 
 // ── Message Handlers ───────────────────────────────────────────
@@ -615,8 +621,11 @@ function handleNodeHealth(msg: ServerMessage & { type: 'nodeHealth' }, ctx: Hand
   ctx.setNodeHealthNodes(msg.nodes)
 }
 
-function handlePermissionDenied(msg: ServerMessage & { type: 'permissionDenied' }): void {
+function handlePermissionDenied(msg: ServerMessage & { type: 'permissionDenied' }, ctx: HandlerContext): void {
   console.warn(`[Webview] 權限被拒絕: action=${msg.action}, reason=${msg.reason}`)
+  // P5.4: 觸發友善提示 toast
+  const message = t.permissionMessages[msg.action] || t.permissionMessages['default'] || msg.reason
+  ctx.setPermissionToastMessage(message)
 }
 
 /** P3.1: 代理所有者變更 */
@@ -753,9 +762,14 @@ export function useExtensionMessages(
   const [agentStartTimes, setAgentStartTimes] = useState<Record<number, number>>({})
   const [nodeHealthNodes, setNodeHealthNodes] = useState<ConnectedNodeInfo[]>([])
   const [pendingAchievementToasts, setPendingAchievementToasts] = useState<string[]>([])
+  const [permissionToastMessage, setPermissionToastMessage] = useState<string | null>(null)
 
   const dismissAchievementToast = useCallback(() => {
     setPendingAchievementToasts((prev) => prev.slice(1))
+  }, [])
+
+  const dismissPermissionToast = useCallback(() => {
+    setPermissionToastMessage(null)
   }, [])
 
   const layoutReadyRef = useRef(false)
@@ -797,6 +811,7 @@ export function useExtensionMessages(
       setAgentStartTimes,
       setNodeHealthNodes,
       setPendingAchievementToasts,
+      setPermissionToastMessage,
     }
 
     const handler = (data: unknown) => {
@@ -812,5 +827,5 @@ export function useExtensionMessages(
     return unsub
   }, [getOfficeState])
 
-  return { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, excludedProjects, projectDirs, currentFloorId, building, floorSummaries, chatMessages, agentGitBranches, agentStatusHistory, agentTeams, agentCliTypes, lanPeers, agentGrowthData, agentStartTimes, nodeHealthNodes, pendingAchievementToasts, dismissAchievementToast }
+  return { agents, selectedAgent, agentTools, agentStatuses, agentModels, subagentTools, subagentCharacters, layoutReady, loadedAssets, agentProjects, remoteAgents, agentTranscripts, excludedProjects, projectDirs, currentFloorId, building, floorSummaries, chatMessages, agentGitBranches, agentStatusHistory, agentTeams, agentCliTypes, lanPeers, agentGrowthData, agentStartTimes, nodeHealthNodes, pendingAchievementToasts, dismissAchievementToast, permissionToastMessage, dismissPermissionToast }
 }

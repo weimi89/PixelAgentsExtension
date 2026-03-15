@@ -413,6 +413,27 @@ const zh_TW = {
   floorNameAlreadyExists: '樓層名稱已被使用',
   personalFloor: '個人樓層',
   publicFloor: '公共樓層',
+
+  // P5.3 — API Key 遮罩
+  apiKeyMasked: (key: string) => `${key.slice(0, 3)}${'*'.repeat(Math.max(0, key.length - 7))}${key.slice(-4)}`,
+  showFullApiKey: '顯示完整 Key',
+  hideFullApiKey: '隱藏 Key',
+
+  // P5.4 — 權限不足友善提示
+  permissionMessages: {
+    saveLayout: '需要管理員權限才能編輯佈局',
+    closeAgent: '只能關閉自己的代理',
+    addFloor: '只有管理員可以新增樓層',
+    removeFloor: '只有管理員可以移除樓層',
+    renameFloor: '只有管理員可以重新命名樓層',
+    editLayout: '需要登入才能編輯佈局',
+    moveAgent: '只能移動自己的代理',
+    setTeam: '只能設定自己代理的團隊',
+    default: '權限不足',
+  } as Record<string, string>,
+
+  // P5.5 — 新手引導提示
+  guideBannerMessage: '登入以編輯佈局和管理代理',
 }
 
 /** 語言字串型別（結構型別，非 literal） */
@@ -831,6 +852,27 @@ const en_US: LocaleStrings = {
   floorNameAlreadyExists: 'Floor name already exists',
   personalFloor: 'Personal Floor',
   publicFloor: 'Public Floor',
+
+  // P5.3 — API Key masking
+  apiKeyMasked: (key: string) => `${key.slice(0, 3)}${'*'.repeat(Math.max(0, key.length - 7))}${key.slice(-4)}`,
+  showFullApiKey: 'Show Full Key',
+  hideFullApiKey: 'Hide Key',
+
+  // P5.4 — Permission denied toast
+  permissionMessages: {
+    saveLayout: 'Admin permission required to edit layout',
+    closeAgent: 'Can only close your own agents',
+    addFloor: 'Only admins can add floors',
+    removeFloor: 'Only admins can remove floors',
+    renameFloor: 'Only admins can rename floors',
+    editLayout: 'Login required to edit layout',
+    moveAgent: 'Can only move your own agents',
+    setTeam: 'Can only set team for your own agents',
+    default: 'Insufficient permissions',
+  } as Record<string, string>,
+
+  // P5.5 — Guide banner
+  guideBannerMessage: 'Login to edit layouts and manage agents',
 }
 
 // ── Locale 管理 ──────────────────────────────────────────────────
